@@ -20,7 +20,7 @@ test.describe('products', () => {
     page,
   }) => {
     const suffix = Date.now(); // this test's rows, nobody else's
-    const skus = [`SKU001-${suffix}`, `SKU002-${suffix}`, `SKU003-${suffix}`];
+    const skus = [`SKU001-${suffix}`, `SKU002-${suffix}`, `SKU003-${suffix}`] as const;
     const submit = page.getByRole('button', { name: 'เพิ่มสินค้า' });
 
     await page.goto('/products');
@@ -47,17 +47,32 @@ test.describe('products', () => {
     await expect(page.getByRole('alert')).toContainText('ถูกใช้งานแล้ว');
 
     // A negative selling price is rejected.
-    await fillProduct(page, { sku: `NEG-${suffix}`, name: 'Negative', price: '-5', threshold: '3' });
+    await fillProduct(page, {
+      sku: `NEG-${suffix}`,
+      name: 'Negative',
+      price: '-5',
+      threshold: '3',
+    });
     await submit.click();
     await expect(page.getByRole('alert')).toContainText('ราคาขายต้องไม่ติดลบ');
 
     // A negative reorder threshold is rejected.
-    await fillProduct(page, { sku: `NEG-${suffix}`, name: 'Negative', price: '5', threshold: '-1' });
+    await fillProduct(page, {
+      sku: `NEG-${suffix}`,
+      name: 'Negative',
+      price: '5',
+      threshold: '-1',
+    });
     await submit.click();
     await expect(page.getByRole('alert')).toContainText('จุดสั่งซื้อซ้ำต้องไม่ติดลบ');
 
     // A quantity that is not a whole number is rejected.
-    await fillProduct(page, { sku: `NEG-${suffix}`, name: 'Fraction', price: '5', threshold: '2.5' });
+    await fillProduct(page, {
+      sku: `NEG-${suffix}`,
+      name: 'Fraction',
+      price: '5',
+      threshold: '2.5',
+    });
     await submit.click();
     await expect(page.getByRole('alert')).toContainText('จำนวนต้องเป็นจำนวนเต็ม');
     await expect(page.getByRole('row', { name: new RegExp(`NEG-${suffix}`) })).toHaveCount(0);
