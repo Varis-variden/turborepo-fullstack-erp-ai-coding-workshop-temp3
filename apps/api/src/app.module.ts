@@ -8,6 +8,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
 import { StoresModule } from './stores/stores.module.js';
+import { SuppliersModule } from './suppliers/suppliers.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StoresModule } from './stores/stores.module.js';
     HealthModule,
     OpenApiModule,
     StoresModule,
+    SuppliersModule,
   ],
 })
 export class AppModule {}

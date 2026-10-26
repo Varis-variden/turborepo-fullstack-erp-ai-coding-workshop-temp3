@@ -18,6 +18,14 @@ export function RootLayout() {
               >
                 สาขา
               </NavLink>
+              <NavLink
+                to="/suppliers"
+                className={({ isActive }) =>
+                  cn('text-muted-foreground hover:text-foreground', isActive && 'text-foreground')
+                }
+              >
+                ผู้จัดจำหน่าย
+              </NavLink>
             </nav>
           </div>
           <UserMenu />
