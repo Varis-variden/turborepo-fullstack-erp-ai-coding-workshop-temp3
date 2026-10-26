@@ -36,10 +36,13 @@ gh issue view 16 --json state -q .state              # your lesson 7 ticket; exp
 gh issue view 17 --json state -q .state              # your lesson 8 ticket; expect: CLOSED
 gh repo set-default --view                           # expect: <you>/<repo>
 gh workflow list                                     # expect: CI and AI review
+gh run list --limit 3                                # expect: runs from lessons 7 and 8; empty means Actions is off
 kiro-cli --version                                   # 2.34.0 or later
 ```
 
 If the two tickets aren't closed, your colleague hasn't merged yet; finish lesson 8 section 8 first. The frontier for this lesson is the tickets those two unblocked, and with both closed it should hold several.
+
+If `gh run list` prints nothing, Actions was never enabled on your fork, and lesson 7 section 2 says what to press. It matters more here than it did there: the pass opens three pull requests with nobody watching, and every one of them expects CI and the AI review to arrive on their own. On a fork with Actions off, all three arrive with no checks and no review, and you find out an hour later.
 
 Then three things.
 

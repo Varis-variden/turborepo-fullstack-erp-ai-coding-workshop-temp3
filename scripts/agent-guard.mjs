@@ -54,6 +54,13 @@ const rules = [
     test: /\bimplement[:-]frontier\b/,
     why: 'runs the implement loop over the frontier, which resets the database and starts agents; a human starts it from a terminal',
   },
+  // Playwright's browser install can also install system packages with sudo and apt-get.
+  // The browser download alone is fine. A human runs the system half once per machine; the CI job runs it on the runner. See lessons/10.
+  {
+    name: 'system package install for Playwright',
+    test: /\bplaywright\s+install\b[^\n]*\s--with-deps\b|\bplaywright\s+install-deps\b/,
+    why: 'installs system packages with sudo and apt-get; run `playwright install chromium` without --with-deps, and let a human install the system packages',
+  },
 ];
 
 // Tool names the three harnesses use for "run a shell command". Anything else

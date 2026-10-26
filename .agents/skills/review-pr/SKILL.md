@@ -17,7 +17,7 @@ Everything you need is on GitHub or in the checkout. Gather it in this order and
 2. The ticket: the issue referenced by `Closes #T` (or `Fixes`, `Resolves`) in the PR body. `gh issue view T` for its body. If there is no such reference, that is your first finding, a Should fix, and you review against the PR body alone.
 3. The spec: the ticket's parent issue, if the ticket or the PR body names one. `gh issue view` it only for the sections the ticket points at.
 4. `gh pr diff N` for the diff against the base branch. Read whole files from the checkout when the diff needs context, in particular every test file the diff touches.
-5. `gh pr checks N` for CI. Do not run tests, typechecks or builds yourself. CI already did, and its result is what counts.
+5. `gh pr checks N` for CI. Two checks come from the `CI` workflow: `check` (lint, typecheck, unit tests, build) and `e2e` (the Playwright tests in `apps/e2e`, against a real database). Do not run tests, typechecks, builds or browsers yourself. CI already did, and its result is what counts.
 6. The repository's rules: `AGENTS.md` at the root and under `apps/api` and `apps/web`.
 
 Do not run the application, start Docker or touch the database. The human does the demo.
@@ -30,11 +30,11 @@ Do not run the application, start Docker or touch the database. The human does t
 
 **3. Security.** Every new or changed API route carries the auth guard and the role the ticket names. Input reaches handlers only through the contract's Zod schemas. No raw SQL built from strings (`$queryRawUnsafe`, interpolated `$queryRaw`). No secrets, tokens or keys in the diff. New env vars are validated in `apps/api/src/config/env.ts` and listed in `.env.example`. Every Security finding is a Blocker.
 
-**4. Test adequacy.** A criterion counts as proven only if the test that proves it is at a seam the ticket names, asserts the criterion's observable outcome, is not `skip` or `todo`, and does not mock the thing under test. A test that fails any of these is a finding, and the criterion's row says **not found**. CI that is red, pending or absent is a Blocker on its own.
+**4. Test adequacy.** A criterion counts as proven only if the test that proves it is at a seam the ticket names, asserts the criterion's observable outcome, is not `skip` or `todo`, and does not mock the thing under test. A test that fails any of these is a finding, and the criterion's row says **not found**. CI that is red, pending or absent is a Blocker on its own, and that includes the `e2e` check. If the ticket has a `Demo:` line and the diff adds or changes no `*.e2e.ts` file in `apps/e2e` that walks it, that is a Should fix.
 
 **5. Evidence.** The PR body should have Summary, Evidence and Merge Danger sections. Check the Evidence section against the ticket's `Demo:` line: could a reviewer who was not in the room reproduce the demo from it alone, with the accounts, URLs and steps it gives? Say what is missing. Do not run the demo.
 
-**6. Merge danger.** What changes for everyone once this merges: new or edited migrations, whether a migration is reversible and what it does to existing rows, seed changes, changed shared packages, renamed routes or schemas, and anything the tickets this one blocks will inherit. If the diff edits a migration that is already on the base branch, that is the first line of the review and a Blocker.
+**6. Merge danger.** Name a red or missing `e2e` check here first: it means the `Demo:` line fails in a clean environment, whatever the PR body says. Then what changes for everyone once this merges: new or edited migrations, whether a migration is reversible and what it does to existing rows, seed changes, changed shared packages, renamed routes or schemas, and anything the tickets this one blocks will inherit. If the diff edits a migration that is already on the base branch, that is the first line of the review and a Blocker.
 
 ## Severity
 
