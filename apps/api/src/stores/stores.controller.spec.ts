@@ -1,6 +1,8 @@
+import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { call } from '@orpc/server';
 import { describe, expect, it, vi } from 'vitest';
+import { ROLES_KEY } from '../auth/auth.decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { StoresController } from './stores.controller.js';
 
@@ -75,6 +77,13 @@ describe('StoresController', () => {
       await expect(
         call(controller.create(), { code: 'B01', name: 'Central Store' }),
       ).rejects.toMatchObject({ code: 'CONFLICT', message: expect.stringContaining('รหัสสาขา') });
+    });
+
+    it('is restricted to admins at the API, so a non-admin is rejected by the guard', () => {
+      // The global AuthGuard reads this metadata; binding it to the route is what this asserts.
+      const roles = new Reflector().get(ROLES_KEY, StoresController.prototype.create);
+
+      expect(roles).toEqual(['ADMIN']);
     });
   });
 });

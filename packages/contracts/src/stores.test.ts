@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateStoreInputSchema, paginated, PaginationInputSchema, StoreSchema } from './stores.js';
+import { CreateStoreInputSchema, StorePageSchema } from './stores.js';
 
 describe('CreateStoreInputSchema', () => {
   it('accepts a store with a code and a name', () => {
@@ -29,26 +29,9 @@ describe('CreateStoreInputSchema', () => {
   });
 });
 
-describe('PaginationInputSchema', () => {
-  it('defaults to the first page with a sane page size', () => {
-    const result = PaginationInputSchema.safeParse({});
-    expect(result.success && result.data).toEqual({ page: 1, pageSize: 20 });
-  });
-
-  it('rejects a page below 1', () => {
-    expect(PaginationInputSchema.safeParse({ page: 0 }).success).toBe(false);
-  });
-
-  it('rejects a page size above the cap', () => {
-    expect(PaginationInputSchema.safeParse({ pageSize: 1000 }).success).toBe(false);
-  });
-});
-
-describe('paginated', () => {
-  const Page = paginated(StoreSchema);
-
-  it('accepts a page of stores with its metadata', () => {
-    const result = Page.safeParse({
+describe('StorePageSchema', () => {
+  it('accepts a newest-first page of stores with its metadata', () => {
+    const result = StorePageSchema.safeParse({
       items: [{ id: 's1', code: 'B01', name: 'Central Store', createdAt: '2026-01-01T00:00:00Z' }],
       page: 1,
       pageSize: 20,

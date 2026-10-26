@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,9 +17,17 @@ const store = (code: string, name: string) => ({
   createdAt: '2026-01-01T00:00:00.000Z',
 });
 
+// Disable retries so a failing request surfaces its error state immediately, without the
+// production retry backoff slowing the test. Retry policy itself is covered in query-client.
+function testQueryClient(): QueryClient {
+  const client = createQueryClient();
+  client.setDefaultOptions({ queries: { retry: false }, mutations: { retry: false } });
+  return client;
+}
+
 function renderPage() {
   return render(
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={testQueryClient()}>
       <StoresPage />
     </QueryClientProvider>,
   );
@@ -58,8 +67,7 @@ describe('StoresPage', () => {
 
     renderPage();
 
-    // The query retries once before surfacing the error, so allow for the retry delay.
-    expect(await screen.findByText(/เกิดข้อผิดพลาด/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByText(/เกิดข้อผิดพลาด/)).toBeInTheDocument();
   });
 
   it('hides the create form from a non-admin', async () => {
