@@ -189,16 +189,22 @@ describe('ProductsController', () => {
 
     it.each([
       ['a negative selling price', { sellingPrice: '-5.00' }],
-      ['a negative reorder threshold', { reorderThresholds: [{ storeCode: 'B01', threshold: -1 }] }],
-      ['a fractional reorder threshold', { reorderThresholds: [{ storeCode: 'B01', threshold: 1.5 }] }],
+      [
+        'a negative reorder threshold',
+        { reorderThresholds: [{ storeCode: 'B01', threshold: -1 }] },
+      ],
+      [
+        'a fractional reorder threshold',
+        { reorderThresholds: [{ storeCode: 'B01', threshold: 1.5 }] },
+      ],
     ])('rejects %s before touching the database (MD-02)', async (_name, override) => {
       const create = vi.fn();
       const findMany = vi.fn();
       const controller = await createController({ product: { create }, store: { findMany } });
 
-      await expect(call(controller.create(), { ...createInput, ...override })).rejects.toMatchObject(
-        { code: 'BAD_REQUEST' },
-      );
+      await expect(
+        call(controller.create(), { ...createInput, ...override }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
       expect(create).not.toHaveBeenCalled();
       expect(findMany).not.toHaveBeenCalled();
     });
@@ -229,9 +235,12 @@ describe('ProductsController', () => {
         .mockRejectedValue(Object.assign(new Error('Record not found'), { code: 'P2025' }));
       const controller = await createController({ product: { update } });
 
-      await expect(call(controller.setActive(), { id: 'nope', active: false })).rejects.toMatchObject(
-        { code: 'NOT_FOUND', message: expect.stringContaining('ไม่พบสินค้า') },
-      );
+      await expect(
+        call(controller.setActive(), { id: 'nope', active: false }),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message: expect.stringContaining('ไม่พบสินค้า'),
+      });
     });
 
     it('is restricted to admins at the API', () => {
