@@ -294,7 +294,7 @@ Read it against the ticket before you read the diff. Every criterion is a line y
 
 ## 7. Your turn: the check that ran itself
 
-The agent pushed and opened the pull request. From here the lesson is lesson 7 section 5 and lesson 8 section 7, with one more check on the list:
+The agent pushed and opened the pull request. From here the lesson is lesson 7 section 5 and lesson 8 sections 7 and 9, with one more check on the list:
 
 ```bash
 gh pr view --web
@@ -352,7 +352,7 @@ Section 6 was one ticket, by hand, so you could watch. The point of the two one-
 
 **The review, lesson 8.** The reviewer reads `gh pr checks` and now knows there are two. A red `e2e` is a Blocker and the first line of Merge danger. A ticket with a `Demo:` line and no `*.e2e.ts` in the diff is a Should fix. The reviewer still never runs the app; it reads the result of the job that did.
 
-What the human half looks like after this lesson, per pull request: read the review, open the trace if `e2e` is red, read the diff against the criteria, tick the boxes, a colleague merges. The database reset and the manual demo from lesson 9 section 7 are gone from the list, because a clean machine did them. The reading isn't, and lesson 7's rule isn't: a human who isn't the author, before it merges.
+What the human half looks like after this lesson, per pull request: read the review, `/address-review` if it has findings, open the trace if `e2e` is red, read the diff against the criteria, tick the boxes, a colleague merges. The database reset and the manual demo from lesson 9 section 7 are gone from the list, because a clean machine did them. The reading isn't, and lesson 7's rule isn't: a human who isn't the author, before it merges.
 
 ---
 
@@ -415,6 +415,7 @@ The skill is one file, read through two symlinks. The package, the config and th
 | The guard       | The hook in `erp.json`, section 4's ninth rule                                        | `.claude/settings.json`, same script             | Lesson 5 Appendix A's hook, same script                             |
 | Headless        | `kiro-cli chat --v3 --no-interactive --agent implementer "/implement-unattended #21"` | `claude -p "/implement-ticket #21"`              | `codex exec "use the implement-ticket skill on #21"`                |
 | Red `e2e` check | Interactive session on the branch, paste the failing test and the trace's last step   | Same                                             | Same                                                                |
+| Review findings | `/address-review #<PR>` in the same interactive session, lesson 8 section 9           | Same                                             | `$address-review #<PR>`                                             |
 
 ---
 

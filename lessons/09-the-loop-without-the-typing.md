@@ -302,11 +302,11 @@ pnpm dev                                             # if the stack from section
 
 Two things to read differently this time. First, the review's Criteria table against the seams the agent stated in the log: a **not found** row at a seam the ticket named means the ticket's `Seams:` line was wrong, not the agent, and the fix is on the ticket before the next pass. Second, the Evidence section: the agent wrote it for a reviewer who wasn't in the room, and this time that reviewer is also you, because you weren't.
 
-If CI is red, lesson 7 said to paste the failing step into the same session. There is no session. Open an interactive one on the branch and do it there:
+If CI is red, lesson 7 said to paste the failing step into the same session. There is no session. Open an interactive one on the branch and do it there, and the same session is where the review's findings get fixed: `/address-review #<PR>`, lesson 8 section 9. The implementer that wrote the code is gone, so the author's turn on these pull requests is always this skill, never a paste:
 
 ```bash
 git switch ticket/19-<slug>
-kiro-cli chat                                        # /clear, then paste the failing step; let it fix, commit and push
+kiro-cli chat                                        # /clear, then /address-review #<PR>, or paste the failing step; let it fix, commit and push
 ```
 
 Then hand all three to a colleague, one at a time, and let them merge as lesson 8 section 7 did: the review in one hand, the demo in the other. Or, if your colleague is doing the same lesson, swap frontiers.
