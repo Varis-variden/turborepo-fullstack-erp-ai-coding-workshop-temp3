@@ -16,7 +16,9 @@ datasource db {
 
 enum Role {
   ADMIN
+  PURCHASING
   STAFF
+  MANAGER
 }
 
 model User {
@@ -26,6 +28,8 @@ model User {
   /// Written by hashPassword() from @erp/database. Never returned by the API.
   passwordHash String
   role         Role     @default(STAFF)
+  /// The store this user acts for. Null means all stores (MANAGER/ADMIN).
+  storeId      String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

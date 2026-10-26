@@ -11,7 +11,10 @@ import { orpc } from '@/lib/orpc';
 // Created by packages/database/prisma/seed.ts.
 const demoAccounts = [
   { email: 'admin@erp.local', role: 'ADMIN' },
-  { email: 'staff@erp.local', role: 'STAFF' },
+  { email: 'buyer01@erp.local', role: 'PURCHASING' },
+  { email: 'staff_b01@erp.local', role: 'STAFF (B01)' },
+  { email: 'staff_b02@erp.local', role: 'STAFF (B02)' },
+  { email: 'manager01@erp.local', role: 'MANAGER' },
 ];
 const DEMO_PASSWORD = 'password';
 

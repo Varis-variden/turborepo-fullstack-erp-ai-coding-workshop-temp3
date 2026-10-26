@@ -10,7 +10,13 @@ import { AuthGuard } from './auth.guard.js';
 import { createSessionToken, SESSION_COOKIE } from './session-token.js';
 
 const secret = 'test-secret-that-is-at-least-32-characters';
-const staff: User = { id: 'u1', email: 'staff@erp.local', name: 'Staff User', role: 'STAFF' };
+const staff: User = {
+  id: 'u1',
+  email: 'staff@erp.local',
+  name: 'Staff User',
+  role: 'STAFF',
+  storeId: 'B01',
+};
 
 class RoutesUnderTest {
   @Public()
