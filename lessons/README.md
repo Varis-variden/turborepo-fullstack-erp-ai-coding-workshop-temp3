@@ -11,4 +11,4 @@ Read these alongside the workshop. Each lesson explains the ideas behind one par
 | 5   | [Hooks: a guard between the agent and the shell](05-hooks-guard-the-shell.md)                          | 15–20 min |
 | 6   | [Subagents: fresh windows that work for the main one](06-subagents-fresh-windows.md)                   | 10–15 min |
 | 7   | [From tickets to code: one turn of the implement loop](07-from-tickets-to-code.md)                     | 45–60 min |
-| 8   | [An AI reviewer on every pull request: Kiro in GitHub Actions](08-ai-reviews-the-pull-request.md)      | 30–45 min |
+| 8   | [An AI reviewer on every pull request: Kiro in GitHub Actions](08-ai-reviews-the-pull-request.md)      | 75–90 min |
