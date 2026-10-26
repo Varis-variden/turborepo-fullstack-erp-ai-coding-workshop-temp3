@@ -80,8 +80,10 @@ jobs:
         run: pnpm --filter @erp/e2e exec playwright install-deps chromium
 
       # DATABASE_URL defaults to the service above (postgresql://erp:erp@localhost:5432/erp).
-      - name: Migrate and seed
-        run: pnpm db:deploy && pnpm db:seed
+      # Prisma 7 does not generate the client on install, and the seed imports it, so
+      # generate sits between the migrations and the seed.
+      - name: Migrate, generate and seed
+        run: pnpm db:deploy && pnpm db:generate && pnpm db:seed
 
       # Builds the API and the web app, then Playwright starts both and runs apps/e2e/tests.
       - run: pnpm e2e
