@@ -18,6 +18,16 @@ const demoStores = [
   { code: 'B01', name: 'Central Store' },
   { code: 'B02', name: 'Riverside Store' },
 ];
+// Suppliers from the TOR sample data (MD-03). A purchase order references one of these.
+const demoSuppliers = [
+  {
+    code: 'SUP01',
+    name: 'SupplyOne Co Ltd',
+    contactName: 'Somchai Prasert',
+    contactPhone: '02-123-4567',
+    contactEmail: 'sales@supplyone.co.th',
+  },
+];
 const DEMO_PASSWORD = 'password';
 
 async function main() {
@@ -26,6 +36,14 @@ async function main() {
       where: { code: store.code },
       update: { name: store.name },
       create: store,
+    });
+  }
+
+  for (const supplier of demoSuppliers) {
+    await prisma.supplier.upsert({
+      where: { code: supplier.code },
+      update: supplier,
+      create: supplier,
     });
   }
 
@@ -38,7 +56,7 @@ async function main() {
     });
   }
   console.log(
-    `Seeded ${demoStores.length} stores and ${demoUsers.length} demo users (password: "${DEMO_PASSWORD}").`,
+    `Seeded ${demoStores.length} stores, ${demoSuppliers.length} suppliers and ${demoUsers.length} demo users (password: "${DEMO_PASSWORD}").`,
   );
 }
 
