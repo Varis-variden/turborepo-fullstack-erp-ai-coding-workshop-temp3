@@ -20,11 +20,25 @@ describe('CreateSupplierInputSchema', () => {
   });
 
   it('rejects an empty code', () => {
-    expect(CreateSupplierInputSchema.safeParse({ code: '', name: 'SupplyOne' }).success).toBe(false);
+    expect(CreateSupplierInputSchema.safeParse({ code: '', name: 'SupplyOne' }).success).toBe(
+      false,
+    );
   });
 
   it('rejects an empty name', () => {
     expect(CreateSupplierInputSchema.safeParse({ code: 'SUP01', name: '' }).success).toBe(false);
+  });
+
+  it('reports an actionable Thai error for a missing code', () => {
+    const result = CreateSupplierInputSchema.safeParse({ code: '', name: 'SupplyOne' });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('กรุณาระบุรหัสผู้จัดจำหน่าย');
+  });
+
+  it('reports an actionable Thai error for a missing name', () => {
+    const result = CreateSupplierInputSchema.safeParse({ code: 'SUP01', name: '' });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('กรุณาระบุชื่อผู้จัดจำหน่าย');
   });
 
   it('rejects a malformed contact email', () => {
@@ -38,7 +52,10 @@ describe('CreateSupplierInputSchema', () => {
   });
 
   it('trims surrounding whitespace from the code and name', () => {
-    const result = CreateSupplierInputSchema.safeParse({ code: '  SUP01  ', name: '  SupplyOne  ' });
+    const result = CreateSupplierInputSchema.safeParse({
+      code: '  SUP01  ',
+      name: '  SupplyOne  ',
+    });
     expect(result.success && result.data).toMatchObject({ code: 'SUP01', name: 'SupplyOne' });
   });
 
