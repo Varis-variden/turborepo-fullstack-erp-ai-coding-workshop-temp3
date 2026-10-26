@@ -29,6 +29,39 @@ model Store {
   code      String   @unique
   name      String
   createdAt DateTime @default(now())
+
+  reorderThresholds ProductReorderThreshold[]
+}
+
+/// A product is something the retailer buys and sells, with one base unit. `sku` is the business
+/// key used across the app (e.g. "SKU001"). An inactive product stays in the database so historical
+/// records can still find it, but it cannot be added to a new document.
+model Product {
+  id           String   @id @default(cuid())
+  /// Unique across the organization, e.g. "SKU001".
+  sku          String   @unique
+  name         String
+  category     String
+  /// The base unit, e.g. "pack".
+  unit         String
+  /// Money is never a float: two decimals, THB.
+  sellingPrice Decimal  @db.Decimal(12, 2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  reorderThresholds ProductReorderThreshold[]
+}
+
+/// The reorder threshold of one product in one store. Whole number, never negative (checked by
+/// the contract); a store without a row has no threshold set.
+model ProductReorderThreshold {
+  productId String
+  storeId   String
+  threshold Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store     Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@id([productId, storeId])
 }
 
 /// A supplier is an organization a purchase order can be raised against. `code` is the business

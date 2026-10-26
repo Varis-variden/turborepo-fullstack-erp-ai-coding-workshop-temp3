@@ -12,6 +12,11 @@ function asPrismaKnownError(error: unknown): PrismaKnownError | undefined {
     : undefined;
 }
 
+/** True when `error` is Prisma's "record to update or delete does not exist" (`P2025`). */
+export function isRecordNotFoundError(error: unknown): boolean {
+  return asPrismaKnownError(error)?.code === 'P2025';
+}
+
 /**
  * True when `error` is a unique-constraint violation (Prisma `P2002`). When `field` is given, it
  * must be one of the fields named in the constraint target.

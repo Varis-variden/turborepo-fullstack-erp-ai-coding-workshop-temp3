@@ -11,6 +11,14 @@ export function RootLayout() {
             ERP Workshop
             <nav className="flex items-center gap-4 text-sm font-normal">
               <NavLink
+                to="/products"
+                className={({ isActive }) =>
+                  cn('text-muted-foreground hover:text-foreground', isActive && 'text-foreground')
+                }
+              >
+                สินค้า
+              </NavLink>
+              <NavLink
                 to="/stores"
                 className={({ isActive }) =>
                   cn('text-muted-foreground hover:text-foreground', isActive && 'text-foreground')
