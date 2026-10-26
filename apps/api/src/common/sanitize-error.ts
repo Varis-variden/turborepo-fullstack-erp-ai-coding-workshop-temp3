@@ -1,8 +1,7 @@
 import { ORPCError } from '@orpc/nest';
 
 /** The Thai message shown for any unexpected server error (NFR-04). */
-export const GENERIC_SERVER_ERROR_MESSAGE =
-  'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้งในภายหลัง';
+export const GENERIC_SERVER_ERROR_MESSAGE = 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้งในภายหลัง';
 
 /**
  * Shape an error for the client so NFR-04 holds: actionable messages, never a stack trace or

@@ -13,9 +13,22 @@ const demoUsers = [
   { email: 'staff_b02@erp.local', name: 'Staff B02', role: Role.STAFF, storeId: 'B02' },
   { email: 'manager01@erp.local', name: 'Manager 01', role: Role.MANAGER, storeId: null },
 ];
+// Stores from the TOR Section 8 sample data. Each store is a distinct stock location.
+const demoStores = [
+  { code: 'B01', name: 'Central Store' },
+  { code: 'B02', name: 'Riverside Store' },
+];
 const DEMO_PASSWORD = 'password';
 
 async function main() {
+  for (const store of demoStores) {
+    await prisma.store.upsert({
+      where: { code: store.code },
+      update: { name: store.name },
+      create: store,
+    });
+  }
+
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   for (const user of demoUsers) {
     await prisma.user.upsert({
@@ -24,7 +37,9 @@ async function main() {
       create: { ...user, passwordHash },
     });
   }
-  console.log(`Seeded ${demoUsers.length} demo users (password: "${DEMO_PASSWORD}").`);
+  console.log(
+    `Seeded ${demoStores.length} stores and ${demoUsers.length} demo users (password: "${DEMO_PASSWORD}").`,
+  );
 }
 
 try {
