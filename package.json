@@ -23,7 +23,8 @@
     "db:deploy": "pnpm --filter @erp/database db:deploy",
     "db:reset": "pnpm --filter @erp/database db:reset",
     "db:seed": "pnpm --filter @erp/database db:seed",
-    "db:studio": "pnpm --filter @erp/database db:studio"
+    "db:studio": "pnpm --filter @erp/database db:studio",
+    "implement:frontier": "bash scripts/implement-frontier.sh"
   },
   "devDependencies": {
     "prettier": "^3.9.10",

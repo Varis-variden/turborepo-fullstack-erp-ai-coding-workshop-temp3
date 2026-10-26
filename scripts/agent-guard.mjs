@@ -48,6 +48,12 @@ const rules = [
     test: /\bgh\s+(issue|pr)\s+(close|reopen)\b/,
     why: 'closes or reopens a ticket or pull request; tickets close when their pull request merges',
   },
+  // The loop script resets the database and starts other agents. A human runs it. See lessons/09.
+  {
+    name: 'implement loop',
+    test: /\bimplement[:-]frontier\b/,
+    why: 'runs the implement loop over the frontier, which resets the database and starts agents; a human starts it from a terminal',
+  },
 ];
 
 // Tool names the three harnesses use for "run a shell command". Anything else

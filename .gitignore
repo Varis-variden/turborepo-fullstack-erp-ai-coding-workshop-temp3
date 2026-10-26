@@ -31,3 +31,6 @@ coverage/
 
 # AI reviewer output (lessons/08)
 .ai-review/
+
+# headless implementer logs (lessons/09)
+.ai-runs/
