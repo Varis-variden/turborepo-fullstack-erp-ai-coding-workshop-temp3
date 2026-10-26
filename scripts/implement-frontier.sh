@@ -48,7 +48,7 @@ cd "$(git rev-parse --show-toplevel)"
 mkdir -p .ai-runs
 
 # --- Preflight: everything the loop assumes, checked before the first ticket.
-for cmd in gh kiro-cli pnpm node docker; do
+for cmd in gh kiro-cli pnpm node docker jq; do
   command -v "$cmd" >/dev/null 2>&1 || fail "$cmd is not installed"
 done
 gh auth status >/dev/null 2>&1 || fail "gh is not logged in"
@@ -84,6 +84,34 @@ fi
 echo "Frontier:   $(echo "$frontier" | sed 's/^/#/' | tr '\n' ' ')(max $max)"
 echo
 
+# --- The narrator. Headless Kiro's text output names the tool and not the
+# command ("[tool] Run Command", "status: InProgress"), which says nothing about
+# what the run is doing. Its stream-json output is one event per line, and the
+# tool_call event carries the command or the path. This turns that stream into
+# one line per thing the agent does, and the agent's own words in between.
+narrate() {
+  jq -nrj --unbuffered --arg root "$PWD" '
+    def short: tostring | gsub("\n"; " ") | ltrimstr($root + "/") | .[0:200];
+    def line:
+      if .type == "runFinished" then "[run] \(.data.status), \(.data.stopReason)"
+      else (.data.update // {}) |
+        if .sessionUpdate == "tool_call" then
+          "[\(.kind // "tool")] \(.rawInput.command // .rawInput.path // .title // "?" | short)"
+        elif .sessionUpdate == "tool_call_update" and .status == "failed" then
+          "[failed] \(.title // "")  \([.content[]?.content.text? // empty] | join(" ") | short)"
+        else null end
+      end;
+    foreach inputs as $e ({newline: true, out: ""};
+      ($e.data.update // {}) as $u |
+      if $u.sessionUpdate == "agent_message_chunk" then
+        ($u.content.text // "") as $t | {newline: ($t | endswith("\n")), out: $t}
+      else ($e | line) as $l |
+        if $l == null then {newline, out: ""}
+        else {newline: true, out: ((if .newline then "" else "\n" end) + $l + "\n")} end
+      end;
+      .out)'
+}
+
 # --- One ticket at a time, each from main, each in a fresh process.
 results=()
 for n in $frontier; do
@@ -92,9 +120,10 @@ for n in $frontier; do
     sed 's/^-//; s/-$//' | cut -c1-50 | sed 's/-$//')
   branch="ticket/$n-$slug"
   log=".ai-runs/$n.log"
+  events=".ai-runs/$n.events.jsonl"
 
   echo "== #$n  $title"
-  echo "   branch $branch, log $log"
+  echo "   branch $branch, log $log, events $events"
 
   if git show-ref --verify --quiet "refs/heads/$branch" ||
     git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
@@ -112,15 +141,19 @@ for n in $frontier; do
   # so the database must not carry the previous ticket's migration.
   pnpm --filter @erp/database exec prisma migrate reset --force >"$log" 2>&1 ||
     fail "database reset failed for #$n; see $log"
+  : >"$events"
 
   git switch -c "$branch" --quiet
 
   # The run. The saved prompt carries the skill and the headless changes to it.
   # No --trust-all-tools: the agent file says what is allowed, and the guard
   # runs inside the session exactly as it does in an interactive one.
+  # Every event goes to $events as it arrives; the narrated version goes to
+  # the screen and $log; Kiro's own stderr (startup info, denials) to $log.
   set +e
-  kiro-cli chat --v3 --no-interactive --agent implementer --effort "$effort" --trust-workspace \
-    "/implement-unattended #$n" 2>&1 | tee -a "$log"
+  kiro-cli chat --v3 --no-interactive --output-format stream-json --agent implementer \
+    --effort "$effort" --trust-workspace "/implement-unattended #$n" 2>>"$log" |
+    tee -a "$events" | narrate | tee -a "$log"
   status=${PIPESTATUS[0]}
   set -e
   [ "$status" = 0 ] || echo "   kiro-cli exited $status" | tee -a "$log"

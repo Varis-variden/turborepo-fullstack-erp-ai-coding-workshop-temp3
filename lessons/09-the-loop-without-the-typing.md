@@ -38,6 +38,7 @@ gh repo set-default --view                           # expect: <you>/<repo>
 gh workflow list                                     # expect: CI and AI review
 gh run list --limit 3                                # expect: runs from lessons 7 and 8; empty means Actions is off
 kiro-cli --version                                   # 2.34.0 or later
+jq --version                                         # any version; the script reads Kiro's event stream with it
 ```
 
 If the two tickets aren't closed, your colleague hasn't merged yet; finish lesson 8 section 8 first. The frontier for this lesson is the tickets those two unblocked, and with both closed it should hold several.
@@ -202,7 +203,7 @@ Three changes, and the skill is otherwise untouched. The skill is what you and e
 
 ## 5. The script and the eighth rule
 
-Open `scripts/implement-frontier.sh`. Read it top to bottom once; it is one screen of preflight and one screen of loop.
+Open `scripts/implement-frontier.sh`. Read it top to bottom once; it is one screen of preflight, a narrator, and one screen of loop.
 
 **Preflight** refuses to start unless everything the loop assumes is true: `gh` logged in with your fork as default, the agent file validates, the prompt exists, you are on a clean `main`, Postgres is running. Each check is one line and one reason, and every one of them is a thing that cost someone a run in lessons 7 and 8.
 
@@ -218,8 +219,9 @@ for n in $frontier; do
   pnpm --filter @erp/database exec prisma migrate reset --force   # section 3's fourth fact
   git switch -c "$branch"
 
-  kiro-cli chat --v3 --no-interactive --agent implementer --effort "$effort" --trust-workspace \
-    "/implement-unattended #$n" | tee -a ".ai-runs/$n.log"
+  kiro-cli chat --v3 --no-interactive --output-format stream-json --agent implementer \
+    --effort "$effort" --trust-workspace "/implement-unattended #$n" |
+    tee -a ".ai-runs/$n.events.jsonl" | narrate | tee -a ".ai-runs/$n.log"
 
   # stop the pass if the run left uncommitted changes: a human looks first
   pr=$(gh pr list --head "$branch" --json url --jq '.[0].url // empty')
@@ -227,16 +229,19 @@ for n in $frontier; do
 done
 ```
 
-| Line                                              | Why                                                                                                                                                                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Skip an existing branch                           | A branch for this ticket means a run already happened. Building again on top, or deleting it, is a decision, and the script doesn't make those                                                                                  |
-| `prisma migrate reset --force`                    | Section 3's drift. `--force` skips Prisma's confirmation, which a script can't answer. It goes through `pnpm exec` rather than the `db:reset` alias because the alias doesn't pass flags through                                |
-| `--v3`, `--no-interactive`, `--agent implementer` | The engine that reads permission rules, headless mode, and the file from section 4. Same three as lesson 8's reviewer command                                                                                                   |
-| `--trust-workspace`                               | Since 2.33 the V3 engine asks whether to trust a folder's hooks and agents the first time. Headless, that ask is a deny and the guard wouldn't load. The flag answers yes for this launch only, for a folder you are sitting in |
-| `/implement-unattended #$n`                       | The saved prompt, section 4. `${1}` becomes `#18`                                                                                                                                                                               |
-| `tee -a .ai-runs/$n.log`                          | You see the run and keep it. `.ai-runs/` is in `.gitignore` next to `.ai-review/`                                                                                                                                               |
-| Stop on uncommitted changes                       | A run that ended mid-slice left work on the branch and no commit. Switching to `main` over it could lose it; moving on could build the next ticket on a dirty tree. The pass stops and tells you which branch to look at        |
-| `gh pr list --head`                               | The one measure of success the script trusts: a pull request exists for the branch. No PR is reported, not retried                                                                                                              |
+| Line                                              | Why                                                                                                                                                                                                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Skip an existing branch                           | A branch for this ticket means a run already happened. Building again on top, or deleting it, is a decision, and the script doesn't make those                                                                                                         |
+| `prisma migrate reset --force`                    | Section 3's drift. `--force` skips Prisma's confirmation, which a script can't answer. It goes through `pnpm exec` rather than the `db:reset` alias because the alias doesn't pass flags through                                                       |
+| `--v3`, `--no-interactive`, `--agent implementer` | The engine that reads permission rules, headless mode, and the file from section 4. Same three as lesson 8's reviewer command                                                                                                                          |
+| `--trust-workspace`                               | Since 2.33 the V3 engine asks whether to trust a folder's hooks and agents the first time. Headless, that ask is a deny and the guard wouldn't load. The flag answers yes for this launch only, for a folder you are sitting in                        |
+| `/implement-unattended #$n`                       | The saved prompt, section 4. `${1}` becomes `#18`                                                                                                                                                                                                      |
+| `--output-format stream-json`                     | Headless text output names the tool and not the command: `[tool] Run Command`, then `status: InProgress` until it is done. This prints the run as events instead, one JSON line each, and the `tool_call` event carries the command or the path        |
+| `tee -a .ai-runs/$n.events.jsonl`                 | Every event, as it arrives, before anything is thrown away. The full record of the run                                                                                                                                                                 |
+| `narrate`                                         | A `jq` program above the loop, twenty lines. One line per tool call with what it ran or touched, the agent's words as they stream, a `[failed]` line with the first words of why, and `[run]` at the end. Everything else in the stream is bookkeeping |
+| `tee -a .ai-runs/$n.log`                          | You see the narrated run and keep it, under the reset's output. Kiro's own stderr goes there too. `.ai-runs/` is in `.gitignore` next to `.ai-review/`                                                                                                 |
+| Stop on uncommitted changes                       | A run that ended mid-slice left work on the branch and no commit. Switching to `main` over it could lose it; moving on could build the next ticket on a dirty tree. The pass stops and tells you which branch to look at                               |
+| `gh pr list --head`                               | The one measure of success the script trusts: a pull request exists for the branch. No PR is reported, not retried                                                                                                                                     |
 
 At the end it prints one line per ticket: the PR URL, `no PR; see .ai-runs/19.log`, or `skipped`. And then it says what it didn't do: "Nothing merged, nothing closed."
 
@@ -268,7 +273,18 @@ The dry run prints the repository, the spec, the frontier and the branch each ti
 
 ### What you'll see
 
-Stay for the first ticket. It is lesson 7 section 4's run, printed to a terminal instead of a chat window, and the shape is the same:
+Stay for the first ticket. It is lesson 7 section 4's run, printed to a terminal instead of a chat window. The screen is the narrator's: a bracketed line for each thing the agent does, and what it says in between.
+
+```
+[read] .kiro/skills/implement-ticket/SKILL.md
+[execute] gh issue view 18 --json title,body
+Ticket #18: ...
+[execute] pnpm --filter @erp/api test -- orders.controller
+[edit] apps/api/src/orders/orders.controller.spec.ts
+[failed] Run Command  Output: ... Exit Code: 1
+```
+
+`[read]`, `[edit]` and `[execute]` are the tool's kind; the rest of the line is the path, or the command. The command is the point: without it, headless Kiro prints `[tool] Run Command` and a column of `status: InProgress`, which is the same line for `gh issue view` and for `pnpm check`, and you can't tell a run that is working from one that is stuck. A `[failed]` line is a command that exited non-zero or was refused, with the first words of its output. In a red-green run, a `[failed]` after a test command is the red, not a problem. The shape is the same as lesson 7's:
 
 1. **The reset.** Prisma drops and replays the migrations and seeds, in the log, not on screen.
 2. **The title.** The skill's first act is to fetch the ticket and state its title. If it isn't `#18`'s title, stop the script with `Ctrl+C`; lesson 7 said why this line exists.
@@ -281,7 +297,7 @@ Stay for the first ticket. It is lesson 7 section 4's run, printed to a terminal
 
 After the first title and seams, go and do something else. Three tickets is one to two hours. The AI review from lesson 8 fires on each pull request the moment it opens, so by the time the pass ends, every PR has CI and a review waiting, and none of it was started by hand.
 
-If the pass stops early with "uncommitted changes on `ticket/19-...`", that is section 8. If a ticket says `no PR`, read `.ai-runs/19.log` from the bottom: the last thing the agent said is usually a refusal it reported, or a `NO PR:` line with the ambiguity it wouldn't guess at.
+If the pass stops early with "uncommitted changes on `ticket/19-...`", that is section 8. If a ticket says `no PR`, read `.ai-runs/19.log` from the bottom: the last thing the agent said is usually a refusal it reported, or a `NO PR:` line with the ambiguity it wouldn't guess at. The `[failed]` line above it names the command. If the first words of its output aren't enough, the whole output is in `.ai-runs/19.events.jsonl`, in the `tool_call_update` event with that command's `toolCallId`.
 
 ---
 
@@ -343,17 +359,17 @@ Two ways to make the next pass collide less, both from the `implement-spec` page
 
 The script reports and stops; it never decides. Everything in this table is a decision, and it is yours.
 
-| What you see                                                  | What it is                                                                                      | What to do                                                                                                                                                                   |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no PR`, and the log ends with `NO PR:` and a question        | The ticket had a gap, and the brief told the agent to stop rather than guess                    | Answer it on the ticket, as lesson 7 section 7 says. Delete the branch, run the pass again; the ticket is still on the frontier                                              |
-| `no PR`, and the log ends with a refused command              | Something the run needed isn't in the allow list, or the guard caught it                        | If it was the guard, good; read why the agent wanted it. If it was a rule, add one narrow line to `implementer.json`. Never `--trust-all-tools`                              |
-| `stopped: uncommitted changes`                                | The run ended mid-slice: a timeout, a crash, a refusal it couldn't recover from                 | `git switch` to the branch, read the log and `git status`. Either finish it interactively with `/implement-ticket #N` and "the branch has partial work", or reset the branch |
-| The title in the log isn't the ticket's                       | `#N` resolved against something other than the tracker                                          | `Ctrl+C`. Check `gh repo set-default --view` is your fork                                                                                                                    |
-| Tests all written first, then all the code                    | Horizontal slicing, with nobody there to object                                                 | Nothing in the script. Read the diff harder in section 7, and consider a line in the ticket's `Seams:` about slice order                                                     |
-| A **not found** row at a seam the ticket named                | The `Seams:` line didn't lead the agent, or the reviewer, to a test that exists                 | Fix the wording on the ticket. The next pass and the next review both read it                                                                                                |
-| The frontier is empty                                         | Nothing is unblocked, because nothing has merged since the last pass, or the edges form a cycle | Merge section 7's pull requests, or fix the edges. The script won't invent a frontier                                                                                        |
-| Two runs on the same ticket in one pass                       | Can't happen; the branch check skips it. If you see it, the branch was deleted mid-pass         | Don't delete branches while a pass is running                                                                                                                                |
-| The agent edited `implementer.json`, a skill, or the workflow | The write deny didn't hold                                                                      | Stop. `git diff` on the branch finds it. The rule is in section 4; check `kiro-cli agent validate` and the engine flag before another run                                    |
+| What you see                                                   | What it is                                                                                      | What to do                                                                                                                                                                   |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no PR`, and the log ends with `NO PR:` and a question         | The ticket had a gap, and the brief told the agent to stop rather than guess                    | Answer it on the ticket, as lesson 7 section 7 says. Delete the branch, run the pass again; the ticket is still on the frontier                                              |
+| `no PR`, and the log ends with a `[failed]` line for a command | Something the run needed isn't in the allow list, or the guard caught it                        | If it was the guard, good; read why the agent wanted it. If it was a rule, add one narrow line to `implementer.json`. Never `--trust-all-tools`                              |
+| `stopped: uncommitted changes`                                 | The run ended mid-slice: a timeout, a crash, a refusal it couldn't recover from                 | `git switch` to the branch, read the log and `git status`. Either finish it interactively with `/implement-ticket #N` and "the branch has partial work", or reset the branch |
+| The title in the log isn't the ticket's                        | `#N` resolved against something other than the tracker                                          | `Ctrl+C`. Check `gh repo set-default --view` is your fork                                                                                                                    |
+| Tests all written first, then all the code                     | Horizontal slicing, with nobody there to object                                                 | Nothing in the script. Read the diff harder in section 7, and consider a line in the ticket's `Seams:` about slice order                                                     |
+| A **not found** row at a seam the ticket named                 | The `Seams:` line didn't lead the agent, or the reviewer, to a test that exists                 | Fix the wording on the ticket. The next pass and the next review both read it                                                                                                |
+| The frontier is empty                                          | Nothing is unblocked, because nothing has merged since the last pass, or the edges form a cycle | Merge section 7's pull requests, or fix the edges. The script won't invent a frontier                                                                                        |
+| Two runs on the same ticket in one pass                        | Can't happen; the branch check skips it. If you see it, the branch was deleted mid-pass         | Don't delete branches while a pass is running                                                                                                                                |
+| The agent edited `implementer.json`, a skill, or the workflow  | The write deny didn't hold                                                                      | Stop. `git diff` on the branch finds it. The rule is in section 4; check `kiro-cli agent validate` and the engine flag before another run                                    |
 
 The first row is the common one, and it is lesson 7 section 7 again: the fix is on the ticket, and the run starts over. The script makes that cheap. Fix, delete the branch, run the pass with `--max 1`.
 
@@ -396,7 +412,7 @@ Read `18`, `19` and `20` as your ticket numbers.
 - `pnpm implement:frontier --dry-run` on a clean `main` prints your fork, your spec, and a frontier of at most three tickets with a branch name each, and builds nothing.
 - `echo '{"tool_input":{"command":"pnpm implement:frontier"}}' | node scripts/agent-guard.mjs` prints the implement loop message and exits 2.
 - `kiro-cli agent list` shows `implementer` as a workspace agent in `(v3 format)`, next to `erp` and `reviewer`, and `kiro-cli agent validate --path .kiro/agents/implementer.json` is silent.
-- `.ai-runs/18.log`, `19.log` and `20.log` exist, each starting with Prisma's reset output and containing the ticket's title, the seams stated, and either a pull request URL or a `NO PR:` line. `git status --short` doesn't list them; `.ai-runs/` is in `.gitignore`.
+- `.ai-runs/18.log`, `19.log` and `20.log` exist, each starting with Prisma's reset output and containing, as `[execute]`, `[read]` and `[edit]` lines with the agent's words between them, the ticket's title, the seams stated, and either a pull request URL or a `NO PR:` line. Next to each, `18.events.jsonl` holds every event of the run, one JSON object per line. `git status --short` doesn't list them; `.ai-runs/` is in `.gitignore`.
 - `gh pr list` shows one open pull request per ticket on **your fork**, each from `ticket/<n>-...` into `main`, each with `Closes #<n>` in the body, Summary, Evidence and Merge Danger sections, a green `check` from `CI`, and at least one `<!-- ai-review -->` review from `github-actions` whose footer names the branch's head commit.
 - `gh run list --workflow ai-review.yml` shows one `pull_request` run per PR that nobody started.
 - `git log ticket/18-... --oneline` shows several commits, each mentioning `#18`, with at least one after the review. `git log main -1` is unchanged from before the pass.
