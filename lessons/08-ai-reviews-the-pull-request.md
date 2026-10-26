@@ -1,6 +1,6 @@
 # Lesson 8: An AI reviewer on every pull request: Kiro in GitHub Actions
 
-**Time:** about 45 minutes, plus 30–40 minutes for the second turn in section 8
+**Time:** about 45 minutes, plus 30–40 minutes for the second turn in section 8 and 10–15 minutes for section 9
 **Goal:** put a read-only reviewer agent on your fork that reads the ticket, the diff and the PR body of every pull request, runs one committed review skill on them with a pinned model, writes one review in a fixed shape that the job checks and posts as a comment, and never approves, merges or closes anything. Then let a human merge the lesson 7 pull request with that review as their script, and run the loop once more so the next pull request gets its review without anyone asking.
 
 By the end of this lesson you should be able to answer three questions:
@@ -452,13 +452,77 @@ Before you hand it over, one check that the review you are about to rely on is o
 gh pr view --json headRefOid -q .headRefOid          # the commit the PR is at
 ```
 
-The footer of the newest review names the same commit, or a run is still in progress. If there is no run, the push didn't fire the event; `gh run list --workflow ai-review.yml` and section 9's table are where to look.
+The footer of the newest review names the same commit, or a run is still in progress. If there is no run, the push didn't fire the event; `gh run list --workflow ai-review.yml` and section 10's table are where to look.
 
-Then swap with your colleague again and do section 7 on this PR: read the review first, run the demo on their machine, open every **not found** row, read the Merge danger paragraph, and merge by hand. The frontier moves again. From here on, every turn is this section: a ticket off the frontier, one `/implement-ticket`, a pull request, a review that arrived because the pull request did, a human with the review in one hand and the demo in the other, a merge. Nothing in the turn is started by hand except the ticket and the merge, and those are the two steps that are supposed to be yours.
+If the review has findings, section 9 comes first: the author fixes what the reviewer found, and the reviewer runs again. Then swap with your colleague again and do section 7 on this PR: read the review first, run the demo on their machine, open every **not found** row, read the Merge danger paragraph, and merge by hand. The frontier moves again. From here on, every turn is this section: a ticket off the frontier, one `/implement-ticket`, a pull request, a review that arrived because the pull request did, a human with the review in one hand and the demo in the other, a merge. Nothing in the turn is started by hand except the ticket and the merge, and those are the two steps that are supposed to be yours.
 
 ---
 
-## 9. When the review is wrong
+## 9. When the review is right: fix the pull request from the findings
+
+Section 7 said what the human reviewer does with a review. Nobody has said what the author does. A `Do not merge yet` is a reason not to merge, and lesson 7's rule puts the fix on the author: the same person, with the same agent, the way a red CI was fixed in lesson 7 section 5 by pasting the failing step into the same session. Except the review doesn't arrive in that session. It arrives minutes after the push, usually after `/clear`, and in lesson 9 there is no session at all. So the author's turn is a skill, the same move lesson 7 made with `implement-ticket`: once per pull request, one line to type, one file to change for everyone.
+
+### The skill
+
+`.agents/skills/address-review/SKILL.md`, symlinked from `.kiro/skills` and `.claude/skills` like its two siblings, invoked as `/address-review #<PR>` with the pull request number, in a fresh session, on the branch. Read it once; it is one page. In order:
+
+1. **It reads before it writes.** `gh pr view` with the reviews, the ticket from the `Closes` line, and the newest review carrying the `<!-- ai-review -->` marker. It states four lines, the PR title, the branch, the ticket, the reviewed commit, and that is the moment to check the number was yours, as lesson 7's title line was.
+2. **It stops if the review is stale.** The footer's `reviewed commit` must be the branch head. If a push happened since, a fresher review is on its way or failed, and fixing findings about code that may have changed is guessing. No review at all: it says so and sends you to `gh run list --workflow ai-review.yml`.
+3. **It triages every finding** and every **not found** row into one of three places, and the skill says which is allowed for which level. Then three more rules, below the table.
+
+| Outcome              | Means                                                                 | Allowed for                                      | Who acts next                                                          |
+| -------------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| **Fixed**            | Code or the PR body changed so the finding no longer holds            | Any finding                                      | The reviewer, on the push                                              |
+| **Left**             | The agent disagrees, with a file and line and one sentence            | Should fix; a `not found` row whose test exists  | You. A comment on the PR, by hand, as you, if you agree with the agent |
+| **Needs the ticket** | The finding turns on a decision the ticket should have made. No guess | Any finding; the only way a Blocker is not fixed | You, on the ticket, lesson 7 section 7. Then run the skill again       |
+
+A **not found** row is the common Blocker and has three causes, so the skill decides by looking rather than by the review's word: a test at the seam the ticket names that asserts the criterion means the reviewer missed it, **Left**; no such test means the agent writes one, test-first, at that seam, **Fixed**; no seam on the ticket for that criterion, or a criterion that reads two ways, **Needs the ticket**. An Evidence finding is about the PR body, which the author's agent wrote, so the agent rewrites the Evidence section with `gh pr edit --body-file` and never the `Closes` line. A finding that cites a rule `AGENTS.md` doesn't contain is **Left**; section 10 says the fix for that is in `review-pr/SKILL.md`, and it is yours.
+
+**It changes nothing the findings don't name.** No refactor, no style pass, and no second `code-review`: the cold reviewer in Actions is the review of the fix, and paying twice for one commit buys nothing.
+
+**One commit, one push.** `pnpm check` and `pnpm format`, then a commit with `#<ticket>` and one line per finding fixed, so the next review's "what changed since" sentence has something to read, then one push. Section 8 priced a push at one review on a 1.3x model; the skill pushes once.
+
+**It reports in the terminal and nowhere else.** Three lists, Fixed, Left, Needs the ticket, and the pushed commit. It never comments, approves, merges or closes, never touches the ticket. The guard would stop the verdicts; the skill doesn't try.
+
+### Run it
+
+On your own PR from section 8, as soon as its review is there and before you swap:
+
+```bash
+git switch ticket/17-<slug>                          # your lesson 8 ticket's branch
+kiro-cli chat
+```
+
+```
+/clear
+/address-review #<PR>
+```
+
+The four lines, then `gh issue view` on the ticket, then the findings one at a time: a test file opened, a failing test, a green one, or a sentence saying why a finding is left. Then `pnpm check`, the commit, the push, and the report. Five to fifteen minutes, mostly `pnpm check`. **[Fill from a real run]** the verdict and findings the review had, the report the skill printed, and the time.
+
+If your review has no findings, `Looks mergeable after the demo`, there is nothing to fix, and that is the review working. Do this section when you swap, on your colleague's PR, sitting next to them while they run it on theirs.
+
+### The review again
+
+The push is a `synchronize` event, and the reviewer from section 6 runs on the fixed commit, under the first review. Wait for it. Section 8's check tells you when it has arrived:
+
+```bash
+gh pr view --json headRefOid -q .headRefOid          # the commit the skill pushed
+```
+
+The footer of the newest review names that commit, and the verdict has moved, or hasn't, and either is information. **[Fill from a real run]** the verdict before and after, and the minutes between the push and the second review. In our run the first review said `Do not merge yet` and the second **[Fill]**.
+
+Three things to do with the report, none of them in the code:
+
+- **Left.** Read each line against the file it names. If you agree with the agent, that is your comment on the PR, by hand, as you, one sentence, under the review. If you agree with the reviewer, run the skill's step yourself in the same session: "fix the Should fix on `<file>:<line>`", and let it commit and push once more.
+- **Needs the ticket.** Lesson 7 section 7: the fix is on the ticket, on GitHub, before anything else. Then `/address-review #<PR>` again. The skill re-reads the ticket, the row that had no seam now has one, and the test gets written.
+- **Nothing left.** Hand the PR to your colleague. Section 7, with the newest review as the script, and the rule in words: the merge waits for a review of the commit that is there, after the demo, never against a stale one.
+
+The skill is the author's half of lesson 7's rule, and it has the same shape as the reviewer's: a model does the reading and the typing, the verdicts stay with people. The reviewer never approves; the author's agent never argues in the thread. What they exchange is commits and reviews, and what the humans exchange is the comment and the merge.
+
+---
+
+## 10. When the review is wrong
 
 The reviewer is an agent in a fresh window with a two-page skill. It will be wrong sometimes, and the fix is almost never in the code it reviewed. Each symptom in the table below traces back to one of five places, and the picture sorts them by which one.
 
@@ -483,7 +547,7 @@ The last row hasn't happened in our runs. It is in the table because the day it 
 
 ---
 
-## 10. Check that it worked
+## 11. Check that it worked
 
 - `kiro-cli agent list` shows `reviewer` as a workspace agent in `(v3 format)`, next to `erp`, and `kiro-cli chat --list-models` lists the model `reviewer.json` pins.
 - `ls -la .kiro/skills/review-pr` and `ls -la .claude/skills/review-pr` are symlinks into `.agents/skills/review-pr`.
@@ -495,6 +559,7 @@ The last row hasn't happened in our runs. It is in the table because the day it 
 - After section 7, on your colleague's fork: the PR is merged by a human, the ticket is closed, and the frontier query prints the tickets it unblocked.
 - After section 8, on your fork: `gh pr list` shows the `ticket/17-...` PR, `gh pr checks` lists `check` from `CI` and `review` from `AI review`, and `gh run list --workflow ai-review.yml` shows runs whose event is `pull_request`, none of which you started.
 - The new PR has at least one `<!-- ai-review -->` review from `github-actions`, in comment state, and the footer of the newest one names the commit `gh pr view --json headRefOid` prints. If the agent pushed twice, there are two reviews with two commits.
+- After section 9: `ls -la .kiro/skills/address-review` and `ls -la .claude/skills/address-review` are symlinks into `.agents/skills/address-review`. The PR has one more commit, mentioning `#17` and the findings it fixed, and one more review from `github-actions` whose footer names that commit. Every **Left** line in the skill's report is either a comment on the PR from you or a fix in a later commit, and every **Needs the ticket** line is an edit on the ticket. Nothing on the PR was posted by an agent: `gh pr view --json comments,reviews` shows only `github-actions` and people.
 - `/context show` in a fresh `erp` session lists `review-pr` next to `implement-ticket`, and the implement run never invoked it.
 
 ---
@@ -507,17 +572,20 @@ The last row hasn't happened in our runs. It is in the table because the day it 
 - **Quality is a skill, consistency is the job.** The six checks, the severities and the template are in `review-pr`, one file for all three tools. The job checks the file has that shape and that the verdict matches the worst finding before it posts, then appends the model, the effort and the commit. What is asked of the model is in the skill; what is enforced is in the workflow.
 - **Advisory, in its own workflow.** It never fails the PR, runs on every push and on demand, and skips cleanly when the key isn't there.
 - **The second turn starts nothing by hand.** A ticket off the frontier, `/implement-ticket`, and the review arrives because the pull request opened. The job is green when it ran, not when it liked the code; the opinion is in the comment, and the footer's commit says whether it is still current.
+- **The author's turn is a skill too.** `address-review` reads the newest review, fixes what it is right about test-first at the line it names, leaves what it is wrong about with a reason, stops on what only the ticket can answer, and pushes once so the reviewer runs again. It never posts. The comment and the merge are the humans' exchange.
 - **The skill is yours.** When the review is wrong, edit `review-pr/SKILL.md` or fix the ticket. Don't argue with the review in the PR thread and don't widen the permissions to make it go away.
 
 ---
 
 ## Optional: try it later
 
-Three extensions, none part of the session.
+Four extensions, none part of the session.
 
 **Inline comments.** `gh pr review --comment --body-file` posts one body. The reviews API accepts a `comments` array with a path and line per entry, which is how hosted reviewers put findings next to the code. Have the skill write a second file, `.ai-review/comments.json`, and add a `gh api repos/{owner}/{repo}/pulls/$PR_NUMBER/reviews --input` line to the posting step. Keep `gh api` out of the agent's allow list: it can do anything the token can, and the agent still never posts.
 
 **Run the demo in the job.** The one thing the reviewer can't do is the `Demo:` line, because there is no app. `ci.yml` could start Postgres as a service, run the migrations and seed, start the API, and the skill could then be allowed `curl http://localhost:3000/api/*`. Lesson 7 section 7's table has a row about exactly this. It roughly doubles the job and the lesson, which is why it is here and not above.
+
+**Read the human's comments too.** `address-review` reads only reviews carrying the `<!-- ai-review -->` marker, because this lesson is about the AI review and a colleague's comment is a conversation between people. Drop the marker filter in its first step and it reads your colleague's section 7 comments as findings, with no severity, so every one of them is a Should fix. Decide first whether you want an agent answering a person.
 
 **See the rules do their work.** Run section 5's command once with `--trust-all-tools` added, in a scratch clone, with a PR you don't care about, and watch what the agent now runs that it couldn't before. Then take the flag away again. Nothing explains "`ask` becomes `allow`" better than watching it.
 
@@ -527,15 +595,16 @@ Three extensions, none part of the session.
 
 Both vendors ship an official GitHub Action, and both read the same `AGENTS.md` and the same `review-pr` skill through their own skills folder. The guard registration from lesson 5 Appendix A applies to each. Only the plumbing differs:
 
-| Step               | Kiro CLI                                                           | Claude Code                                                                                              | Codex                                                     |
-| ------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Action             | Hand-rolled: install `kiro-cli`, run headless                      | `anthropics/claude-code-action`                                                                          | `openai/codex-action`                                     |
-| Secret             | `KIRO_API_KEY` (Pro and above)                                     | `ANTHROPIC_API_KEY`                                                                                      | `OPENAI_API_KEY`                                          |
-| The review         | `review-pr`, loaded by the `reviewer` agent, one-paragraph brief   | `/review-pr #N` from the action's `prompt` input, or a `.claude/agents` subagent that calls it           | `/review-pr #N` from the action's `prompt` input          |
-| Model and effort   | `model` in `reviewer.json`, `--effort` on the command              | The action's model input; see its README                                                                 | The action's model input; see its README                  |
-| Read-only          | `permissions.rules` in the agent file                              | `--allowedTools` and `--disallowedTools` in the action's arguments, plus the hook                        | The action's sandbox and approval settings, plus the hook |
-| Headless `ask`     | Treated as deny                                                    | Denied unless the tool is allow-listed                                                                   | Depends on the configured approval policy                 |
-| Posting the review | The job posts `.ai-review/review.md` with `gh pr review --comment` | The action can comment on the PR itself; keep it to comment state, or keep the file and the posting step | The same posting step; the agent only writes the file     |
+| Step                | Kiro CLI                                                             | Claude Code                                                                                              | Codex                                                               |
+| ------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Action              | Hand-rolled: install `kiro-cli`, run headless                        | `anthropics/claude-code-action`                                                                          | `openai/codex-action`                                               |
+| Secret              | `KIRO_API_KEY` (Pro and above)                                       | `ANTHROPIC_API_KEY`                                                                                      | `OPENAI_API_KEY`                                                    |
+| The review          | `review-pr`, loaded by the `reviewer` agent, one-paragraph brief     | `/review-pr #N` from the action's `prompt` input, or a `.claude/agents` subagent that calls it           | `/review-pr #N` from the action's `prompt` input                    |
+| Model and effort    | `model` in `reviewer.json`, `--effort` on the command                | The action's model input; see its README                                                                 | The action's model input; see its README                            |
+| Read-only           | `permissions.rules` in the agent file                                | `--allowedTools` and `--disallowedTools` in the action's arguments, plus the hook                        | The action's sandbox and approval settings, plus the hook           |
+| Headless `ask`      | Treated as deny                                                      | Denied unless the tool is allow-listed                                                                   | Depends on the configured approval policy                           |
+| Posting the review  | The job posts `.ai-review/review.md` with `gh pr review --comment`   | The action can comment on the PR itself; keep it to comment state, or keep the file and the posting step | The same posting step; the agent only writes the file               |
+| Fix from the review | `/address-review #<PR>` in a fresh interactive session on the branch | `/address-review #<PR>`, same skill through `.claude/skills`                                             | `$address-review #<PR>`, or "use the address-review skill on #<PR>" |
 
 Read each action's README before copying the table; both move quickly. The decisions don't: one skill in the repo, a pinned model, read-only tools, a job that checks the shape and posts in comment state only, a human merges.
 

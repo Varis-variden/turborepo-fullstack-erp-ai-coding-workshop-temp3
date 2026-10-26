@@ -25,7 +25,7 @@ Venue Wi-Fi is shared by everyone, so download the heavy stuff beforehand.
    - An editor: [VS Code](https://code.visualstudio.com/), Cursor, Kiro, WebStorm, ...
    - [GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login`. Lesson 4 uses it to fork the repo and publish issues.
 2. **Windows only:** install [WSL 2](https://learn.microsoft.com/windows/wsl/install) and clone the repo **inside the WSL filesystem** (e.g. `~/code`, not `C:\...` / `/mnt/c/...`). File watching and performance are much better there.
-3. Fork this repository on GitHub, then clone **your fork** and pre-download everything. Lesson 4 publishes GitHub issues into your fork. (Already cloned the original? Lesson 4 shows how to fork afterwards.)
+3. Fork this repository on GitHub, then clone **your fork** and pre-download everything. Lesson 4 publishes GitHub issues into your fork. (Already cloned the original? Lesson 4 shows how to fork afterwards.) While you are on github.com, open your fork's **Actions** tab and press the button that enables workflows: GitHub switches them off on every fork, and lessons 7 to 10 need CI and the AI review running on yours.
 
    ```bash
    git clone <your-fork-url> erp-workshop
