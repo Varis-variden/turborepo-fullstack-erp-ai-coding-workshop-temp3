@@ -1,7 +1,7 @@
 import type { Prisma } from '@erp/database';
 
-/** The numbered document types. Each has its own sequence and prefix (`PO-001`, `GR-001`, later `SAL-`). */
-export type DocumentType = 'PO' | 'GR';
+/** The numbered document types. Each has its own sequence and prefix (`PO-001`, `GR-001`, `SAL-001`). */
+export type DocumentType = 'PO' | 'GR' | 'SAL';
 
 /** Numbers are zero-padded to this many digits; a longer sequence value simply keeps its digits. */
 const DOCUMENT_NUMBER_WIDTH = 3;

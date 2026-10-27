@@ -50,6 +50,7 @@ model Store {
   stockBalances     StockBalance[]
   purchaseOrders    PurchaseOrder[]
   goodsReceipts     GoodsReceipt[]
+  sales             Sale[]
   auditLogs         AuditLog[]
 }
 
@@ -74,6 +75,7 @@ model Product {
   stockBalances      StockBalance[]
   purchaseOrderLines PurchaseOrderLine[]
   goodsReceiptLines  GoodsReceiptLine[]
+  saleLines          SaleLine[]
 }
 
 /// The reorder threshold of one product in one store. Whole number, never negative (checked by
@@ -271,6 +273,52 @@ model GoodsReceiptLine {
 
   @@unique([goodsReceiptId, purchaseOrderLineId])
   @@index([purchaseOrderLineId])
+}
+
+/// A draft sale raised at one store (SAL-01). `number` is the unique per-type sequential document
+/// number, e.g. "SAL-001", allocated in the same transaction that writes the sale. A draft sale is
+/// a document only: creating it does not append a stock movement or change any balance (SAL-02).
+/// `total` is the sum of the line amounts, held to two decimals. `createdById` is a plain string
+/// like StockMovement.actorId, not a foreign key.
+model Sale {
+  id          String   @id @default(cuid())
+  /// Unique across all sales, e.g. "SAL-001".
+  number      String   @unique
+  /// The store the sale is raised at; sales are scoped to the caller's assigned store.
+  storeId     String
+  createdById String?
+  /// Sum of the line amounts. Money is never a float: two decimals, THB.
+  total       Decimal  @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+
+  store Store      @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  lines SaleLine[]
+
+  @@index([storeId, createdAt])
+}
+
+/// One product line of a sale. `sku`, `productName`, `unit` and `unitPrice` are a snapshot taken at
+/// creation from the product's current selling price, so later edits to the product never change a
+/// historical sale and the price cannot be overridden by the caller (SAL-01). `quantity` is a
+/// positive whole number (checked by the contract). `lineAmount` is quantity × unitPrice.
+model SaleLine {
+  id         String  @id @default(cuid())
+  saleId     String
+  productId  String
+  sku        String
+  productName String
+  unit       String
+  quantity   Int
+  /// The product's selling price at the time of sale. Money is never a float: two decimals, THB.
+  unitPrice  Decimal @db.Decimal(12, 2)
+  /// quantity × unitPrice, held to two decimals.
+  lineAmount Decimal @db.Decimal(12, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  /// A SKU appears at most once per sale (SAL-01).
+  @@unique([saleId, productId])
 }
 
 /// The audit log of sensitive actions (NFR-03): who did what, when, against which source
