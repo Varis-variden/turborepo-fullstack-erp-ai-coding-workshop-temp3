@@ -12,7 +12,12 @@ import { orpc } from '@/lib/orpc';
 const FALLBACK_ERROR = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
 const SELECT_CLASS = 'h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs';
 
-const STATUS_LABEL: Record<PurchaseOrder['status'], string> = { DRAFT: 'ฉบับร่าง' };
+const STATUS_LABEL: Record<PurchaseOrder['status'], string> = {
+  DRAFT: 'ฉบับร่าง',
+  APPROVED: 'อนุมัติแล้ว',
+  PARTIALLY_RECEIVED: 'รับสินค้าบางส่วน',
+  COMPLETED: 'รับสินค้าครบแล้ว',
+};
 
 /** The messages of the contract's validation issues, when the API rejected the input. */
 function validationMessages(error: unknown): string[] {

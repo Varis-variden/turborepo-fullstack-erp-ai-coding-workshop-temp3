@@ -15,7 +15,7 @@ const orderInclude = {
 type OrderRow = {
   id: string;
   number: string;
-  status: 'DRAFT';
+  status: PurchaseOrder['status'];
   expectedReceiptDate: Date;
   createdAt: Date;
   supplier: { code: string; name: string };

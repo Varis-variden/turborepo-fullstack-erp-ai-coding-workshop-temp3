@@ -49,6 +49,7 @@ model Store {
   stockMovements    StockMovement[]
   stockBalances     StockBalance[]
   purchaseOrders    PurchaseOrder[]
+  goodsReceipts     GoodsReceipt[]
   auditLogs         AuditLog[]
 }
 
@@ -72,6 +73,7 @@ model Product {
   stockMovements     StockMovement[]
   stockBalances      StockBalance[]
   purchaseOrderLines PurchaseOrderLine[]
+  goodsReceiptLines  GoodsReceiptLine[]
 }
 
 /// The reorder threshold of one product in one store. Whole number, never negative (checked by
@@ -158,8 +160,13 @@ model StockBalance {
   @@id([productId, storeId])
 }
 
+/// Where a purchase order is in its life. Receipts move an APPROVED order to PARTIALLY_RECEIVED
+/// while quantity is outstanding and to COMPLETED once every line is fully received (GR-03).
 enum PurchaseOrderStatus {
   DRAFT
+  APPROVED
+  PARTIALLY_RECEIVED
+  COMPLETED
 }
 
 /// The next number to hand out for each type of numbered document (`PO`, later `GR` and `SAL`).
@@ -190,6 +197,7 @@ model PurchaseOrder {
   supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   store    Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
   lines    PurchaseOrderLine[]
+  receipts GoodsReceipt[]
 
   @@index([createdAt])
 }
@@ -210,14 +218,59 @@ model PurchaseOrderLine {
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  receiptLines  GoodsReceiptLine[]
 
   /// A SKU appears at most once per order (PO-01).
   @@unique([purchaseOrderId, productId])
 }
 
+/// A confirmed goods receipt against an approved purchase order (GR-03). Confirming it allocates
+/// the unique `GR-` `number`, increases the destination store's stock and appends the RECEIPT
+/// movements in one transaction. `idempotencyKey` is a client-generated UUID, one per user action,
+/// unique-constrained so the same action can never post twice (GR-04, NFR-03). Receipts are final:
+/// never edited or deleted. `receivedById` is a plain string like StockMovement.actorId.
+model GoodsReceipt {
+  id              String   @id @default(cuid())
+  /// Unique across all goods receipts, e.g. "GR-001".
+  number          String   @unique
+  idempotencyKey  String   @unique
+  purchaseOrderId String
+  /// The destination store of the order, kept here so receipts can be store-scoped.
+  storeId         String
+  receivedById    String
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  store         Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  lines         GoodsReceiptLine[]
+
+  @@index([purchaseOrderId])
+}
+
+/// One received line of a goods receipt. `sku`, `productName` and `unit` are a snapshot taken at
+/// confirmation, like the purchase-order line it fulfils. `quantity` is a positive whole number;
+/// lines received at zero are not recorded.
+model GoodsReceiptLine {
+  id                  String @id @default(cuid())
+  goodsReceiptId      String
+  purchaseOrderLineId String
+  productId           String
+  sku                 String
+  productName         String
+  unit                String
+  quantity            Int
+
+  goodsReceipt      GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderLine PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([goodsReceiptId, purchaseOrderLineId])
+  @@index([purchaseOrderLineId])
+}
+
 /// The audit log of sensitive actions (NFR-03): who did what, when, against which source
 /// document, in which store, and with what outcome. Written in the same transaction as the
-/// action it records (a stock adjustment is the first), so an audited action and its audit row
+/// action it records (a stock adjustment, a goods receipt), so an audited action and its audit row
 /// post together or roll back together. Rows are append-only: never edited or deleted. Reads are
 /// restricted by permission and store scope. `storeId` is what store-scoped reads filter on;
 /// `actorId` is a plain string like StockMovement.actorId, not a foreign key.

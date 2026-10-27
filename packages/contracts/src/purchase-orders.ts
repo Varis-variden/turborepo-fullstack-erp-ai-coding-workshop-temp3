@@ -18,8 +18,16 @@ export const PurchaseOrderLineSchema = z.object({
 });
 export type PurchaseOrderLine = z.infer<typeof PurchaseOrderLineSchema>;
 
-/** Only drafts exist so far; the approval and receiving statuses arrive with their tickets. */
-export const PurchaseOrderStatusSchema = z.enum(['DRAFT']);
+/**
+ * Draft orders, approved orders and the two statuses receiving drives (GR-03). The pending,
+ * rejected and cancelled statuses arrive with the state-machine ticket.
+ */
+export const PurchaseOrderStatusSchema = z.enum([
+  'DRAFT',
+  'APPROVED',
+  'PARTIALLY_RECEIVED',
+  'COMPLETED',
+]);
 export type PurchaseOrderStatus = z.infer<typeof PurchaseOrderStatusSchema>;
 
 /**

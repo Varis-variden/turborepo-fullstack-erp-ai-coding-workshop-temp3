@@ -1,5 +1,6 @@
 import { auditContract } from './audit.js';
 import { authContract } from './auth.js';
+import { goodsReceiptsContract } from './goods-receipts.js';
 import { healthContract } from './health.js';
 import { inventoryContract } from './inventory.js';
 import { productsContract } from './products.js';
@@ -9,6 +10,7 @@ import { suppliersContract } from './suppliers.js';
 
 export * from './audit.js';
 export * from './auth.js';
+export * from './goods-receipts.js';
 export * from './health.js';
 export * from './inventory.js';
 export * from './pagination.js';
@@ -27,6 +29,7 @@ export * from './suppliers.js';
 export const contract = {
   audit: auditContract,
   auth: authContract,
+  goodsReceipts: goodsReceiptsContract,
   health: healthContract,
   inventory: inventoryContract,
   products: productsContract,
