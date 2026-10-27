@@ -4,6 +4,7 @@ import { HomePage } from '@/routes/home';
 import { InventoryPage } from '@/routes/inventory';
 import { LoginPage } from '@/routes/login';
 import { ProductsPage } from '@/routes/products';
+import { PurchaseOrdersPage } from '@/routes/purchase-orders';
 import { RootLayout } from '@/routes/root-layout';
 import { StoresPage } from '@/routes/stores';
 import { SuppliersPage } from '@/routes/suppliers';
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
           { path: 'inventory', element: <InventoryPage /> },
           { path: 'stores', element: <StoresPage /> },
           { path: 'suppliers', element: <SuppliersPage /> },
+          { path: 'purchase-orders', element: <PurchaseOrdersPage /> },
         ],
       },
     ],

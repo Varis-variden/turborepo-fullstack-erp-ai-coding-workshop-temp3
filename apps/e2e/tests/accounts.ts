@@ -1,11 +1,12 @@
 import path from 'node:path';
 
-// The two demo accounts from packages/database/prisma/seed.ts. Tests never create users;
+// The demo accounts from packages/database/prisma/seed.ts. Tests never create users;
 // they sign in as one of these through the saved storage state.
 export const DEMO_PASSWORD = 'password';
 
 export const accounts = {
   admin: { email: 'admin@erp.local', name: 'Admin User', role: 'ADMIN' },
+  buyer: { email: 'buyer01@erp.local', name: 'Buyer 01', role: 'PURCHASING' },
   staff: { email: 'staff_b01@erp.local', name: 'Staff B01', role: 'STAFF' },
 } as const;
 
