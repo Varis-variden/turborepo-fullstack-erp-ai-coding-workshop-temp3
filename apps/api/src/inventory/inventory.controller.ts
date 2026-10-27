@@ -2,12 +2,13 @@ import { Controller } from '@nestjs/common';
 import { contract, type StockItem, type User } from '@erp/contracts';
 import { Implement, implement } from '@orpc/nest';
 import { CurrentUser } from '../auth/auth.decorators.js';
+import { assertStoreScope } from '../auth/store-scope.js';
 import { PrismaService } from '../database/prisma.service.js';
 
 /**
- * A StockBalance read with the product (and its reorder threshold for this store) and the store.
- * The threshold lives on ProductReorderThreshold keyed by product + store; we load the single row
- * for this balance's store so a product with no threshold in this store reports `null`.
+ * A StockBalance read with the product (plus every reorder threshold it has) and the store.
+ * Thresholds live on ProductReorderThreshold keyed by product + store; `toStockItem` picks the
+ * row for this balance's store, reporting `null` when the product has no threshold there.
  */
 const stockInclude = {
   product: {
@@ -59,9 +60,11 @@ export class InventoryController {
     return implement(contract.inventory.search).handler(async ({ input }) => {
       const { page, pageSize, search, storeCode } = input;
 
-      // Store scope is enforced here, not in the UI: a store user only ever sees their own store,
-      // whatever store they ask for (NFR-01). An unassigned user (MANAGER/ADMIN) sees every store,
-      // optionally narrowed by the requested store code.
+      // Store scope is enforced here, not in the UI (NFR-01). A store user asking for another
+      // store is rejected with FORBIDDEN, not silently narrowed; asking for no store (or their
+      // own) scopes to their store. An unassigned user (MANAGER/ADMIN) sees every store, optionally
+      // narrowed by the requested store code.
+      if (storeCode) assertStoreScope(user, storeCode);
       const effectiveStoreCode = user.storeId ?? storeCode;
 
       const where = {

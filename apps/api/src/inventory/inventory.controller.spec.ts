@@ -117,17 +117,7 @@ describe('InventoryController.search', () => {
     expect(findMany.mock.calls[0]?.[0].where.store).toEqual({ code: 'B01' });
   });
 
-  it('forces a store user to their own store, ignoring any other store they ask for', async () => {
-    const findMany = vi.fn().mockResolvedValue([]);
-    const count = vi.fn().mockResolvedValue(0);
-    const controller = await createController({ stockBalance: { findMany, count } });
-
-    await call(controller.search(staffB01), { page: 1, pageSize: 20, storeCode: 'B02' });
-
-    expect(findMany.mock.calls[0]?.[0].where.store).toEqual({ code: 'B01' });
-  });
-
-  it('scopes a store user to their store even when they ask for no store', async () => {
+  it('forces a store user to their own store when they ask for no store', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const count = vi.fn().mockResolvedValue(0);
     const controller = await createController({ stockBalance: { findMany, count } });
@@ -135,6 +125,28 @@ describe('InventoryController.search', () => {
     await call(controller.search(staffB01), { page: 1, pageSize: 20 });
 
     expect(findMany.mock.calls[0]?.[0].where.store).toEqual({ code: 'B01' });
+  });
+
+  it('lets a store user ask for their own store explicitly', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const controller = await createController({ stockBalance: { findMany, count } });
+
+    await call(controller.search(staffB01), { page: 1, pageSize: 20, storeCode: 'B01' });
+
+    expect(findMany.mock.calls[0]?.[0].where.store).toEqual({ code: 'B01' });
+  });
+
+  it('rejects a store user asking for another store with FORBIDDEN, and queries nothing', async () => {
+    const findMany = vi.fn();
+    const count = vi.fn();
+    const controller = await createController({ stockBalance: { findMany, count } });
+
+    await expect(
+      call(controller.search(staffB01), { page: 1, pageSize: 20, storeCode: 'B02' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(findMany).not.toHaveBeenCalled();
+    expect(count).not.toHaveBeenCalled();
   });
 
   it('asks for the right slice on a later page', async () => {
