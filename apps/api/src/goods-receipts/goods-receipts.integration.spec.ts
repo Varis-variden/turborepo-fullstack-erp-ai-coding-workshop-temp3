@@ -74,6 +74,24 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     await prisma.$disconnect();
   });
 
+  /**
+   * A refused receipt must leave every business record as it was: the opening stock, no movement,
+   * no receipt, the order still Approved, and no audit row. The guards assert this so that a
+   * rejection is proven to post nothing (AC-03, AC-04), not merely to return an error.
+   */
+  async function expectNothingPosted(
+    stock: Awaited<ReturnType<typeof approvedOrder>>['stock'],
+    order: Awaited<ReturnType<typeof approvedOrder>>['order'],
+  ) {
+    expect(await stock.balance()).toBe(10);
+    expect(await stock.movements()).toEqual([]);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(0);
+    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'APPROVED',
+    );
+    expect(await prisma.auditLog.findMany({ where: { storeId: stock.storeId } })).toEqual([]);
+  }
+
   it('AC-01: receiving 8 of 20 with stock at 10 makes stock 18, outstanding 12, Partially Received, with exactly one receipt and one receipt movement', async () => {
     const { stock, sku, order, staff, store } = await approvedOrder();
 
@@ -134,7 +152,7 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     );
   });
 
-  it('AC-03 (GR-02): receiving 21 against an order of 20 is rejected, with no receipt, no movement, stock still 10 and the order still Approved', async () => {
+  it('AC-03 (GR-02, GR-05): receiving 21 against an order of 20 is rejected, and nothing is posted — stock still 10, the order still Approved', async () => {
     const { stock, sku, order, staff } = await approvedOrder();
 
     await expect(
@@ -145,23 +163,18 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining(sku) });
 
-    expect(await stock.balance()).toBe(10);
-    expect(await stock.movements()).toEqual([]);
-    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(0);
-    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
-      'APPROVED',
-    );
-    expect(await prisma.auditLog.findMany({ where: { storeId: stock.storeId } })).toEqual([]);
+    await expectNothingPosted(stock, order);
   });
 
   it('AC-04 (GR-01, NFR-01): a store employee of another store receiving this order is rejected, and no business data changes', async () => {
     const { stock, sku, order, staff } = await approvedOrder();
-    // A direct API request by a different store's employee: store scope is server-side, so the
-    // order's own store code is never B02 here.
+    // A direct API request by an employee assigned to a different store than the order's. Store
+    // scope is server-side, so the store code here just has to differ from the order's own
+    // (freshly generated) code; `assertStoreScope` rejects any mismatch.
     const staffOtherStore: User = {
       ...staff,
-      id: `${staff.id}-b02`,
-      storeId: 'B02-NOT-THIS-STORE',
+      id: `${staff.id}-other-store`,
+      storeId: `${staff.storeId}-OTHER`,
     };
 
     await expect(
@@ -172,16 +185,10 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
-    expect(await stock.balance()).toBe(10);
-    expect(await stock.movements()).toEqual([]);
-    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(0);
-    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
-      'APPROVED',
-    );
-    expect(await prisma.auditLog.findMany({ where: { storeId: stock.storeId } })).toEqual([]);
+    await expectNothingPosted(stock, order);
   });
 
-  it('AC-03 (GR-05): two concurrent receipts of the full 20 cannot exceed the order — exactly one posts, total received is 20, stock rises to 30', async () => {
+  it('GR-05: two concurrent receipts of the full 20 cannot exceed the order — exactly one posts, total received is 20, stock rises to 30', async () => {
     const { stock, sku, order, staff } = await approvedOrder();
     const receiveAll = () =>
       call(controller.confirm(staff), {
@@ -192,14 +199,16 @@ describe('GoodsReceiptsController (real Postgres)', () => {
 
     const results = await Promise.allSettled([receiveAll(), receiveAll()]);
 
-    // The two requests together ordered 40 against a cap of 20: one commits all 20, the other
-    // finds nothing outstanding and is rejected. The order quantity is never exceeded (GR-05).
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    // The two requests together ask for 40 against a cap of 20: one commits all 20, the other is
+    // refused. Serializable isolation decides the loser one of two ways — it re-reads the now-full
+    // order and the cap rejects it (BAD_REQUEST), or it exhausts its one retry on the contended
+    // balance row and is told to retry later (CONFLICT). Either way the cap is never exceeded.
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
     const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(rejected[0]!.reason).toMatchObject({
-      code: 'BAD_REQUEST',
-      message: expect.stringContaining(sku),
+      code: expect.stringMatching(/^(BAD_REQUEST|CONFLICT)$/),
     });
 
     expect(await stock.balance()).toBe(30);
