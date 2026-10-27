@@ -5,15 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { orpc } from '@/lib/orpc';
+import { PURCHASE_ORDER_STATUS_LABEL } from '@/lib/purchase-order-status';
 
 const FALLBACK_ERROR = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
-
-const STATUS_LABEL: Record<ReceivingOrder['status'], string> = {
-  DRAFT: 'ฉบับร่าง',
-  APPROVED: 'อนุมัติแล้ว',
-  PARTIALLY_RECEIVED: 'รับสินค้าบางส่วน',
-  COMPLETED: 'รับสินค้าครบแล้ว',
-};
 
 /** The messages of the contract's validation issues, when the API rejected the input. */
 function validationMessages(error: unknown): string[] {
@@ -62,7 +56,7 @@ function ReceivingOrderCard({ order }: { order: ReceivingOrder }) {
     <section aria-label={order.number} className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="font-mono text-lg font-semibold">{order.number}</h2>
-        <Badge variant="secondary">{STATUS_LABEL[order.status]}</Badge>
+        <Badge variant="secondary">{PURCHASE_ORDER_STATUS_LABEL[order.status]}</Badge>
         <span className="text-sm text-muted-foreground">
           {order.supplierName} · สาขา {order.storeName} · คาดว่าจะได้รับ {order.expectedReceiptDate}
         </span>
