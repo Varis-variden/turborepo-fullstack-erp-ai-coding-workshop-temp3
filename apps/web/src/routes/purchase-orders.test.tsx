@@ -13,7 +13,13 @@ const buyer = {
   role: 'PURCHASING',
   storeId: null,
 };
-const staff = { id: '2', email: 'staff_b01@erp.local', name: 'Staff', role: 'STAFF', storeId: 'B01' };
+const staff = {
+  id: '2',
+  email: 'staff_b01@erp.local',
+  name: 'Staff',
+  role: 'STAFF',
+  storeId: 'B01',
+};
 
 const page = (items: unknown[]) => ({ items, page: 1, pageSize: 20, total: items.length });
 const iso = '2026-01-01T00:00:00.000Z';

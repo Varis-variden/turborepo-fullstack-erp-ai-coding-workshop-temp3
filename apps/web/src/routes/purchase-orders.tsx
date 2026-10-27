@@ -228,7 +228,9 @@ function CreateOrderForm() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor={`po-line-qty-${line.key}`}>จำนวนที่สั่ง รายการที่ {position}</Label>
+                  <Label htmlFor={`po-line-qty-${line.key}`}>
+                    จำนวนที่สั่ง รายการที่ {position}
+                  </Label>
                   <Input
                     id={`po-line-qty-${line.key}`}
                     inputMode="numeric"

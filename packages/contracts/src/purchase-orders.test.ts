@@ -112,9 +112,9 @@ describe('CreatePurchaseOrderInputSchema', () => {
   it.each(['', '2026-13-01', '2026-02-30', '01/02/2026'])(
     'rejects %j as an expected receipt date',
     (expectedReceiptDate) => {
-      expect(CreatePurchaseOrderInputSchema.safeParse({ ...validInput, expectedReceiptDate }).success).toBe(
-        false,
-      );
+      expect(
+        CreatePurchaseOrderInputSchema.safeParse({ ...validInput, expectedReceiptDate }).success,
+      ).toBe(false);
     },
   );
 

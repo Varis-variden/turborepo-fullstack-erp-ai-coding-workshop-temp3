@@ -79,7 +79,9 @@ async function createController(stubs: Stubs = {}) {
   const create = vi.fn(async ({ data }: { data: { number: string } }) => orderRow(data.number));
   const tx = { documentSequence: { upsert }, purchaseOrder: { create } };
   const prisma = {
-    supplier: { findUnique: vi.fn().mockResolvedValue('supplier' in stubs ? stubs.supplier : supplier) },
+    supplier: {
+      findUnique: vi.fn().mockResolvedValue('supplier' in stubs ? stubs.supplier : supplier),
+    },
     store: { findUnique: vi.fn().mockResolvedValue('store' in stubs ? stubs.store : store) },
     product: { findMany: vi.fn().mockResolvedValue(stubs.products ?? [water]) },
     purchaseOrder: { findMany: vi.fn(), count: vi.fn() },
