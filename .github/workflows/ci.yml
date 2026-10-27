@@ -9,6 +9,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A real Postgres for the integration specs (test:integration). DATABASE_URL defaults to this
+    # service (postgresql://erp:erp@localhost:5432/erp).
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v5
 
@@ -23,7 +39,9 @@ jobs:
 
       - run: pnpm format:check
 
-      - run: pnpm turbo run lint typecheck test build
+      - run: pnpm db:deploy
+
+      - run: pnpm turbo run lint typecheck test test:integration build
 
   # The Demo: lines, run by a machine. Playwright drives the built web app against the
   # built API and a real Postgres, on every pull request. Unlike the AI review this job
