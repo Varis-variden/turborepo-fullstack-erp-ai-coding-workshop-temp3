@@ -34,16 +34,12 @@ const balance = (
     sku,
     name,
     unit: 'pack',
-    reorderThresholds:
-      threshold === null ? [] : [{ storeId: storeCode.toLowerCase(), threshold }],
+    reorderThresholds: threshold === null ? [] : [{ storeId: storeCode.toLowerCase(), threshold }],
   },
   store: { id: storeCode.toLowerCase(), code: storeCode },
 });
 
-async function createController(stubs: {
-  stockBalance?: object;
-  store?: object;
-}) {
+async function createController(stubs: { stockBalance?: object; store?: object }) {
   const moduleRef = await Test.createTestingModule({
     controllers: [InventoryController],
     providers: [{ provide: PrismaService, useValue: { store: {}, stockBalance: {}, ...stubs } }],
@@ -53,18 +49,22 @@ async function createController(stubs: {
 
 describe('InventoryController.search', () => {
   it('returns quantity, unit, threshold and a low-stock flag per product in a store', async () => {
-    const findMany = vi.fn().mockResolvedValue([
-      balance('SKU001', 'Drinking water pack of 6', 10, 3),
-      balance('SKU002', 'Tissue paper', 5, 3),
-      balance('SKU003', 'Laundry detergent', 0, 3),
-    ]);
+    const findMany = vi
+      .fn()
+      .mockResolvedValue([
+        balance('SKU001', 'Drinking water pack of 6', 10, 3),
+        balance('SKU002', 'Tissue paper', 5, 3),
+        balance('SKU003', 'Laundry detergent', 0, 3),
+      ]);
     const count = vi.fn().mockResolvedValue(3);
     const controller = await createController({ stockBalance: { findMany, count } });
 
     const result = await call(controller.search(manager), { page: 1, pageSize: 20 });
 
     expect(result.total).toBe(3);
-    expect(result.items.map((i) => [i.sku, i.unit, i.quantity, i.reorderThreshold, i.lowStock])).toEqual([
+    expect(
+      result.items.map((i) => [i.sku, i.unit, i.quantity, i.reorderThreshold, i.lowStock]),
+    ).toEqual([
       ['SKU001', 'pack', 10, 3, false],
       ['SKU002', 'pack', 5, 3, false],
       ['SKU003', 'pack', 0, 3, true],

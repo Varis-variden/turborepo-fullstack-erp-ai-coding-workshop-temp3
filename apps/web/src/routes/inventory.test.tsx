@@ -6,8 +6,20 @@ import { createQueryClient } from '@/lib/query-client';
 import { mockApi } from '@/test/mock-api';
 import { InventoryPage } from './inventory';
 
-const manager = { id: '1', email: 'manager01@erp.local', name: 'Manager', role: 'MANAGER', storeId: null };
-const staff = { id: '2', email: 'staff_b01@erp.local', name: 'Staff', role: 'STAFF', storeId: 'B01' };
+const manager = {
+  id: '1',
+  email: 'manager01@erp.local',
+  name: 'Manager',
+  role: 'MANAGER',
+  storeId: null,
+};
+const staff = {
+  id: '2',
+  email: 'staff_b01@erp.local',
+  name: 'Staff',
+  role: 'STAFF',
+  storeId: 'B01',
+};
 
 const page = (items: unknown[]) => ({ items, page: 1, pageSize: 20, total: items.length });
 const stock = (

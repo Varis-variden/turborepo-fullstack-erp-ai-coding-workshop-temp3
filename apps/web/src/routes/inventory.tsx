@@ -82,9 +82,10 @@ export function InventoryPage() {
   // A store-scoped user only ever sees their own store (enforced at the API), so the store filter
   // is pointless for them. An unassigned user (MANAGER/ADMIN) can narrow to one store.
   const canChooseStore = user?.storeId == null;
-  const stores = useQuery(
-    orpc.stores.list.queryOptions({ input: { page: 1, pageSize: 100 } }, { enabled: canChooseStore }),
-  );
+  const stores = useQuery({
+    ...orpc.stores.list.queryOptions({ input: { page: 1, pageSize: 100 } }),
+    enabled: canChooseStore,
+  });
   const [search, setSearch] = useState('');
   const [storeCode, setStoreCode] = useState('');
 
