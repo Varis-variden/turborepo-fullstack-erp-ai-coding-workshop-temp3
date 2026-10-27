@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfirmGoodsReceiptInputSchema } from './goods-receipts.js';
+import { ConfirmGoodsReceiptInputSchema, goodsReceiptsContract } from './goods-receipts.js';
 
 const KEY = '3f1d6a3e-5b0e-4a53-9a58-0d0f4f7f6a11';
 
@@ -90,5 +90,15 @@ describe('ConfirmGoodsReceiptInputSchema', () => {
     expect(messages({ ...validInput, idempotencyKey: 'not-a-uuid' })).toContain(
       'รหัสป้องกันการบันทึกซ้ำไม่ถูกต้อง',
     );
+  });
+});
+
+describe('goodsReceiptsContract (GR-05: confirmed receipts are final)', () => {
+  // A confirmed receipt cannot be edited or cancelled because no such route exists: the contract
+  // is the whole API surface, so the only operations are listing receivable orders and confirming
+  // a receipt. This test is the guard against a future edit/cancel/delete route quietly making
+  // receipts mutable.
+  it('exposes only listOrders and confirm — no edit, cancel or delete route', () => {
+    expect(Object.keys(goodsReceiptsContract).sort()).toEqual(['confirm', 'listOrders']);
   });
 });
