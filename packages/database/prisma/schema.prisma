@@ -30,6 +30,12 @@ enum StockMovementType {
   ADJUSTMENT
 }
 
+/// Whether an audited action succeeded (POSTED) or was rejected (REJECTED). NFR-03.
+enum AuditOutcome {
+  POSTED
+  REJECTED
+}
+
 /// A store is a distinct stock location. `code` is the business key used across the app
 /// (e.g. "B01"); it is what `User.storeId` refers to.
 model Store {
@@ -43,6 +49,7 @@ model Store {
   stockMovements    StockMovement[]
   stockBalances     StockBalance[]
   purchaseOrders    PurchaseOrder[]
+  auditLogs         AuditLog[]
 }
 
 /// A product is something the retailer buys and sells, with one base unit. `sku` is the business
@@ -206,4 +213,32 @@ model PurchaseOrderLine {
 
   /// A SKU appears at most once per order (PO-01).
   @@unique([purchaseOrderId, productId])
+}
+
+/// The audit log of sensitive actions (NFR-03): who did what, when, against which source
+/// document, in which store, and with what outcome. Written in the same transaction as the
+/// action it records (a stock adjustment is the first), so an audited action and its audit row
+/// post together or roll back together. Rows are append-only: never edited or deleted. Reads are
+/// restricted by permission and store scope. `storeId` is what store-scoped reads filter on;
+/// `actorId` is a plain string like StockMovement.actorId, not a foreign key.
+model AuditLog {
+  id         String       @id @default(cuid())
+  /// The audited action, e.g. "STOCK_ADJUSTMENT".
+  action     String
+  /// The user who performed the action.
+  actorId    String
+  /// The store the action happened in; store-scoped reads filter on this.
+  storeId    String
+  /// The document that the action refers to, e.g. "ADJUSTMENT" plus the movement id. `sourceId`
+  /// is null when the action wrote no document (a rejected adjustment writes no movement).
+  sourceType String
+  sourceId   String?
+  outcome    AuditOutcome
+  /// A human-readable detail, e.g. the adjustment reason.
+  detail     String?
+  createdAt  DateTime     @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@index([storeId, createdAt])
 }

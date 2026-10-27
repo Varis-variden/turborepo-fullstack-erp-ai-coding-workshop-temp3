@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ORPCModule } from '@orpc/nest';
+import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { sanitizeError } from './common/sanitize-error.js';
 import { validateEnv } from './config/env.js';
@@ -36,6 +37,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     }),
     DatabaseModule,
     AuthModule,
+    AuditModule,
     HealthModule,
     InventoryModule,
     OpenApiModule,
