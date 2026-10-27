@@ -18,14 +18,32 @@ export const PurchaseOrderLineSchema = z.object({
 });
 export type PurchaseOrderLine = z.infer<typeof PurchaseOrderLineSchema>;
 
-/** Only drafts exist so far; the approval and receiving statuses arrive with their tickets. */
-export const PurchaseOrderStatusSchema = z.enum(['DRAFT']);
+/**
+ * The lifecycle of a purchase order (PO-02..PO-04). The API enforces the transition table:
+ *
+ *   DRAFT              -> PENDING_APPROVAL | CANCELLED
+ *   PENDING_APPROVAL   -> APPROVED | REJECTED (terminal) | CANCELLED
+ *   APPROVED           -> PARTIALLY_RECEIVED | COMPLETED   (by goods receipt, not by a route here)
+ *   PARTIALLY_RECEIVED -> PARTIALLY_RECEIVED | COMPLETED   (by goods receipt)
+ *
+ * REJECTED, CANCELLED and COMPLETED are terminal.
+ */
+export const PurchaseOrderStatusSchema = z.enum([
+  'DRAFT',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'REJECTED',
+  'CANCELLED',
+  'PARTIALLY_RECEIVED',
+  'COMPLETED',
+]);
 export type PurchaseOrderStatus = z.infer<typeof PurchaseOrderStatusSchema>;
 
 /**
  * A purchase order refers to one supplier and one destination store (MD-03). `number` is the
  * unique, zero-padded sequential document number (`PO-001`). `expectedReceiptDate` is a calendar
- * date (`YYYY-MM-DD`), not a moment in time.
+ * date (`YYYY-MM-DD`), not a moment in time. `reason` is what the manager or creator wrote when
+ * the order was rejected or cancelled, and null otherwise.
  */
 export const PurchaseOrderSchema = z.object({
   id: z.string(),
@@ -37,6 +55,7 @@ export const PurchaseOrderSchema = z.object({
   storeName: z.string(),
   expectedReceiptDate: z.iso.date(),
   createdAt: z.iso.datetime(),
+  reason: z.string().nullable(),
   lines: z.array(PurchaseOrderLineSchema),
 });
 export type PurchaseOrder = z.infer<typeof PurchaseOrderSchema>;
@@ -123,6 +142,34 @@ export type CreatePurchaseOrderInput = z.infer<typeof CreatePurchaseOrderInputSc
 export const ListPurchaseOrdersInputSchema = PaginationInputSchema;
 export type ListPurchaseOrdersInput = z.infer<typeof ListPurchaseOrdersInputSchema>;
 
+export const SubmitPurchaseOrderInputSchema = z.object({ id: z.string().min(1) });
+export type SubmitPurchaseOrderInput = z.infer<typeof SubmitPurchaseOrderInputSchema>;
+
+export const ApprovePurchaseOrderInputSchema = z.object({ id: z.string().min(1) });
+export type ApprovePurchaseOrderInput = z.infer<typeof ApprovePurchaseOrderInputSchema>;
+
+/** A trimmed, mandatory reason of at most 200 characters, with the given "please give a reason" copy. */
+const reasonSchema = (requiredMessage: string) =>
+  z
+    .string(requiredMessage)
+    .trim()
+    .min(1, requiredMessage)
+    .max(200, 'เหตุผลต้องไม่เกิน 200 ตัวอักษร');
+
+/** Rejecting an order needs a reason (PO-03). */
+export const RejectPurchaseOrderInputSchema = z.object({
+  id: z.string().min(1),
+  reason: reasonSchema('กรุณาระบุเหตุผลในการปฏิเสธใบสั่งซื้อ'),
+});
+export type RejectPurchaseOrderInput = z.infer<typeof RejectPurchaseOrderInputSchema>;
+
+/** Cancelling an order needs a reason (PO-04). */
+export const CancelPurchaseOrderInputSchema = z.object({
+  id: z.string().min(1),
+  reason: reasonSchema('กรุณาระบุเหตุผลในการยกเลิกใบสั่งซื้อ'),
+});
+export type CancelPurchaseOrderInput = z.infer<typeof CancelPurchaseOrderInputSchema>;
+
 export const PurchaseOrderPageSchema = paginated(PurchaseOrderSchema);
 export type PurchaseOrderPage = z.infer<typeof PurchaseOrderPageSchema>;
 
@@ -144,5 +191,41 @@ export const purchaseOrdersContract = {
       tags: ['Purchase orders'],
     })
     .input(CreatePurchaseOrderInputSchema)
+    .output(PurchaseOrderSchema),
+  submit: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/submit',
+      summary: 'Submit a draft purchase order for approval (its creator only)',
+      tags: ['Purchase orders'],
+    })
+    .input(SubmitPurchaseOrderInputSchema)
+    .output(PurchaseOrderSchema),
+  approve: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/approve',
+      summary: 'Approve a purchase order that is pending approval (manager)',
+      tags: ['Purchase orders'],
+    })
+    .input(ApprovePurchaseOrderInputSchema)
+    .output(PurchaseOrderSchema),
+  reject: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/reject',
+      summary: 'Reject a purchase order that is pending approval, with a reason (manager)',
+      tags: ['Purchase orders'],
+    })
+    .input(RejectPurchaseOrderInputSchema)
+    .output(PurchaseOrderSchema),
+  cancel: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/cancel',
+      summary: 'Cancel a draft or pending purchase order, with a reason (creator or manager)',
+      tags: ['Purchase orders'],
+    })
+    .input(CancelPurchaseOrderInputSchema)
     .output(PurchaseOrderSchema),
 };
