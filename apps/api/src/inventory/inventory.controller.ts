@@ -4,7 +4,7 @@ import { Implement, implement, ORPCError } from '@orpc/nest';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { assertStoreScope } from '../auth/store-scope.js';
 import { PrismaService } from '../database/prisma.service.js';
-import { StockService } from './stock.service.js';
+import { INSUFFICIENT_STOCK_MESSAGE, StockService } from './stock.service.js';
 
 /**
  * A StockBalance read with the product (plus every reorder threshold it has) and the store.
@@ -165,19 +165,35 @@ export class InventoryController {
             };
           });
         } catch (error) {
-          // A rejected adjustment is itself audited (NFR-03): outcome REJECTED, no source document
-          // because no movement was written. The reason is still recorded.
-          await this.prisma.auditLog.create({
-            data: {
-              action: 'STOCK_ADJUSTMENT',
-              actorId: user.id,
-              storeId: store.id,
-              sourceType: 'ADJUSTMENT',
-              sourceId: null,
-              outcome: 'REJECTED',
-              detail: reason,
-            },
-          });
+          // Only a stock-rule rejection (an over-reduction below the available balance) is an
+          // audited REJECTED outcome (NFR-03). A serialization CONFLICT is contention ("try
+          // again") and any other failure is an infrastructure error; neither is a manager's
+          // adjustment being rejected on its merits, so they propagate without a misleading audit
+          // row. Validation misses (unknown/inactive SKU, unknown store) throw BAD_REQUEST before
+          // this try, so they are likewise not audited: a malformed request is not an
+          // executed-and-rejected adjustment.
+          const isOverReduction =
+            error instanceof ORPCError && error.message === INSUFFICIENT_STOCK_MESSAGE;
+          if (!isOverReduction) throw error;
+
+          // The rejection is itself audited: outcome REJECTED, no source document because no
+          // movement was written. Writing the audit row must never mask the rejection the caller
+          // needs to see, so a failure here is logged and the original error still surfaces.
+          try {
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'STOCK_ADJUSTMENT',
+                actorId: user.id,
+                storeId: store.id,
+                sourceType: 'ADJUSTMENT',
+                sourceId: null,
+                outcome: 'REJECTED',
+                detail: reason,
+              },
+            });
+          } catch (auditError) {
+            console.error('Failed to write REJECTED audit row for stock adjustment', auditError);
+          }
           throw error;
         }
       },

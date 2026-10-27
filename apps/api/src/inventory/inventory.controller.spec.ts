@@ -1,6 +1,6 @@
 import type { User } from '@erp/contracts';
 import { Test } from '@nestjs/testing';
-import { call } from '@orpc/server';
+import { call, ORPCError } from '@orpc/server';
 import { describe, expect, it, vi } from 'vitest';
 import { PrismaService } from '../database/prisma.service.js';
 import { InventoryController } from './inventory.controller.js';
@@ -268,11 +268,7 @@ describe('InventoryController.adjust', () => {
   it('rejects a reduction greater than the available balance, writes no movement, and records a REJECTED audit entry', async () => {
     const apply = vi
       .fn()
-      .mockRejectedValue(
-        new (await import('@orpc/server')).ORPCError('CONFLICT', {
-          message: INSUFFICIENT_STOCK_MESSAGE,
-        }),
-      );
+      .mockRejectedValue(new ORPCError('CONFLICT', { message: INSUFFICIENT_STOCK_MESSAGE }));
     const auditCreate = vi.fn().mockResolvedValue({});
     const rejectedAuditCreate = vi.fn().mockResolvedValue({});
     const controller = await createController(
@@ -307,6 +303,55 @@ describe('InventoryController.adjust', () => {
         detail: 'ของเสีย',
       },
     });
+  });
+
+  it('does not audit a serialization CONFLICT as a rejection (it is contention, not a stock-rule rejection)', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValue(
+        new ORPCError('CONFLICT', { message: 'มีผู้ใช้อื่นกำลังเปลี่ยนแปลงสต็อก' }),
+      );
+    const auditCreate = vi.fn();
+    const rejectedAuditCreate = vi.fn().mockResolvedValue({});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+        auditLog: { create: rejectedAuditCreate },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(rejectedAuditCreate).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the original rejection even when writing the REJECTED audit row fails', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValue(new ORPCError('CONFLICT', { message: INSUFFICIENT_STOCK_MESSAGE }));
+    const auditCreate = vi.fn();
+    const rejectedAuditCreate = vi.fn().mockRejectedValue(new Error('audit write failed'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+        auditLog: { create: rejectedAuditCreate },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    // The caller still sees the insufficient-stock rejection, not the audit-write failure.
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: INSUFFICIENT_STOCK_MESSAGE,
+    });
+    expect(rejectedAuditCreate).toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
   });
 
   it('rejects an unknown SKU with BAD_REQUEST before touching the ledger', async () => {
