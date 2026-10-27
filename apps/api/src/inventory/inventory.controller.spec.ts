@@ -1,9 +1,10 @@
 import type { User } from '@erp/contracts';
 import { Test } from '@nestjs/testing';
-import { call } from '@orpc/server';
+import { call, ORPCError } from '@orpc/server';
 import { describe, expect, it, vi } from 'vitest';
 import { PrismaService } from '../database/prisma.service.js';
 import { InventoryController } from './inventory.controller.js';
+import { INSUFFICIENT_STOCK_MESSAGE, StockService } from './stock.service.js';
 
 const manager: User = {
   id: 'u-mgr',
@@ -39,10 +40,19 @@ const balance = (
   store: { id: storeCode.toLowerCase(), code: storeCode },
 });
 
-async function createController(stubs: { stockBalance?: object; store?: object }) {
+async function createController(
+  stubs: { stockBalance?: object; store?: object; product?: object; auditLog?: object },
+  stockService: Partial<StockService> = {},
+) {
   const moduleRef = await Test.createTestingModule({
     controllers: [InventoryController],
-    providers: [{ provide: PrismaService, useValue: { store: {}, stockBalance: {}, ...stubs } }],
+    providers: [
+      {
+        provide: PrismaService,
+        useValue: { store: {}, stockBalance: {}, product: {}, auditLog: {}, ...stubs },
+      },
+      { provide: StockService, useValue: stockService },
+    ],
   }).compile();
   return moduleRef.get(InventoryController);
 }
@@ -157,5 +167,241 @@ describe('InventoryController.search', () => {
     await call(controller.search(manager), { page: 2, pageSize: 10 });
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 10, take: 10 }));
+  });
+});
+
+const water = {
+  id: 'p1',
+  sku: 'SKU001',
+  name: 'Drinking water pack of 6',
+  unit: 'pack',
+  active: true,
+};
+const storeB01 = { id: 'st-b01', code: 'B01', name: 'Central Store' };
+
+/**
+ * A StockService stand-in. `transact(work)` runs the work callback with a ledger whose `apply`
+ * is the supplied stub and whose `tx.auditLog.create` is `auditCreate`, mirroring how the real
+ * service exposes the open transaction. When `apply` rejects, the callback throws and nothing it
+ * wrote through `tx` is kept, exactly as a rolled-back transaction behaves.
+ */
+function stubStockService(apply: ReturnType<typeof vi.fn>, auditCreate: ReturnType<typeof vi.fn>) {
+  return {
+    transact: vi.fn(async (work: (ledger: unknown) => Promise<unknown>) =>
+      work({ tx: { auditLog: { create: auditCreate } }, apply }),
+    ),
+  } as unknown as StockService;
+}
+
+const adjustInput = { sku: 'SKU001', storeCode: 'B01', quantityChange: -4, reason: 'นับสต็อกใหม่' };
+
+describe('InventoryController.adjust', () => {
+  it('posts an ADJUSTMENT movement for the product and store and returns the new balance', async () => {
+    const movement = {
+      id: 'm1',
+      quantityChange: 5,
+      balanceBefore: 10,
+      balanceAfter: 15,
+    };
+    const apply = vi.fn().mockResolvedValue(movement);
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    const result = await call(controller.adjust(manager), {
+      sku: 'SKU001',
+      storeCode: 'B01',
+      quantityChange: 5,
+      reason: 'นับสต็อกใหม่',
+    });
+
+    expect(apply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: 'p1',
+        storeId: 'st-b01',
+        quantityChange: 5,
+        type: 'ADJUSTMENT',
+        actorId: 'u-mgr',
+      }),
+    );
+    expect(result).toEqual({
+      sku: 'SKU001',
+      storeCode: 'B01',
+      quantityChange: 5,
+      balanceBefore: 10,
+      balanceAfter: 15,
+    });
+  });
+
+  it('records a POSTED audit entry referencing the movement, with the reason as detail', async () => {
+    const movement = { id: 'm1', quantityChange: -4, balanceBefore: 10, balanceAfter: 6 };
+    const apply = vi.fn().mockResolvedValue(movement);
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await call(controller.adjust(manager), adjustInput);
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        action: 'STOCK_ADJUSTMENT',
+        actorId: 'u-mgr',
+        storeId: 'st-b01',
+        sourceType: 'ADJUSTMENT',
+        sourceId: 'm1',
+        outcome: 'POSTED',
+        detail: 'นับสต็อกใหม่',
+      },
+    });
+  });
+
+  it('rejects a reduction greater than the available balance, writes no movement, and records a REJECTED audit entry', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValue(new ORPCError('CONFLICT', { message: INSUFFICIENT_STOCK_MESSAGE }));
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const rejectedAuditCreate = vi.fn().mockResolvedValue({});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+        auditLog: { create: rejectedAuditCreate },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(
+      call(controller.adjust(manager), {
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: -999,
+        reason: 'ของเสีย',
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    // No audit row was written inside the rolled-back transaction.
+    expect(auditCreate).not.toHaveBeenCalled();
+    // A REJECTED audit row was written outside it, with no source document (no movement).
+    expect(rejectedAuditCreate).toHaveBeenCalledWith({
+      data: {
+        action: 'STOCK_ADJUSTMENT',
+        actorId: 'u-mgr',
+        storeId: 'st-b01',
+        sourceType: 'ADJUSTMENT',
+        sourceId: null,
+        outcome: 'REJECTED',
+        detail: 'ของเสีย',
+      },
+    });
+  });
+
+  it('does not audit a serialization CONFLICT as a rejection (it is contention, not a stock-rule rejection)', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValue(
+        new ORPCError('CONFLICT', { message: 'มีผู้ใช้อื่นกำลังเปลี่ยนแปลงสต็อก' }),
+      );
+    const auditCreate = vi.fn();
+    const rejectedAuditCreate = vi.fn().mockResolvedValue({});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+        auditLog: { create: rejectedAuditCreate },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(rejectedAuditCreate).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the original rejection even when writing the REJECTED audit row fails', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValue(new ORPCError('CONFLICT', { message: INSUFFICIENT_STOCK_MESSAGE }));
+    const auditCreate = vi.fn();
+    const rejectedAuditCreate = vi.fn().mockRejectedValue(new Error('audit write failed'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+        auditLog: { create: rejectedAuditCreate },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    // The caller still sees the insufficient-stock rejection, not the audit-write failure.
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: INSUFFICIENT_STOCK_MESSAGE,
+    });
+    expect(rejectedAuditCreate).toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
+  it('rejects an unknown SKU with BAD_REQUEST before touching the ledger', async () => {
+    const apply = vi.fn();
+    const auditCreate = vi.fn();
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(null) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown store with BAD_REQUEST before touching the ledger', async () => {
+    const apply = vi.fn();
+    const auditCreate = vi.fn();
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue(water) },
+        store: { findUnique: vi.fn().mockResolvedValue(null) },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('rejects adjusting an inactive product with BAD_REQUEST', async () => {
+    const apply = vi.fn();
+    const auditCreate = vi.fn();
+    const controller = await createController(
+      {
+        product: { findUnique: vi.fn().mockResolvedValue({ ...water, active: false }) },
+        store: { findUnique: vi.fn().mockResolvedValue(storeB01) },
+      },
+      stubStockService(apply, auditCreate),
+    );
+
+    await expect(call(controller.adjust(manager), adjustInput)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(apply).not.toHaveBeenCalled();
   });
 });

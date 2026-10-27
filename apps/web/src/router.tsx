@@ -6,6 +6,7 @@ import { LoginPage } from '@/routes/login';
 import { ProductsPage } from '@/routes/products';
 import { PurchaseOrdersPage } from '@/routes/purchase-orders';
 import { RootLayout } from '@/routes/root-layout';
+import { StockAdjustmentsPage } from '@/routes/stock-adjustments';
 import { StoresPage } from '@/routes/stores';
 import { SuppliersPage } from '@/routes/suppliers';
 
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
           { index: true, element: <HomePage /> },
           { path: 'products', element: <ProductsPage /> },
           { path: 'inventory', element: <InventoryPage /> },
+          { path: 'stock-adjustments', element: <StockAdjustmentsPage /> },
           { path: 'stores', element: <StoresPage /> },
           { path: 'suppliers', element: <SuppliersPage /> },
           { path: 'purchase-orders', element: <PurchaseOrdersPage /> },
