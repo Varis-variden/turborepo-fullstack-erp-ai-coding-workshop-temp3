@@ -78,11 +78,14 @@ function createTx(order: ReturnType<typeof orderRow> | null) {
   return { tx, goodsReceiptCreate };
 }
 
-async function createController(stock: StockService, prisma: object = {}) {
+async function createController(stock: StockService, prisma?: object) {
+  // By default no receipt exists for the key, so confirm() falls through to a fresh confirmation.
+  // A replay test passes its own prisma whose goodsReceipt.findUnique returns the stored receipt.
+  const prismaStub = prisma ?? { goodsReceipt: { findUnique: vi.fn().mockResolvedValue(null) } };
   const moduleRef = await Test.createTestingModule({
     controllers: [GoodsReceiptsController],
     providers: [
-      { provide: PrismaService, useValue: prisma },
+      { provide: PrismaService, useValue: prismaStub },
       { provide: StockService, useValue: stock },
     ],
   }).compile();
@@ -246,25 +249,118 @@ describe('GoodsReceiptsController.confirm', () => {
     });
   });
 
-  it('GR-04: an idempotency key that was already used is refused without leaking database detail', async () => {
-    const { tx, goodsReceiptCreate } = createTx(orderRow());
-    goodsReceiptCreate.mockRejectedValue(
-      Object.assign(new Error('Unique constraint failed on the fields: (`idempotencyKey`)'), {
-        code: 'P2002',
-        meta: { target: ['idempotencyKey'] },
-      }),
-    );
-    const { stock } = createStock(tx);
-    const controller = await createController(stock);
+  describe('GR-04: a retry of the same action replays the original receipt', () => {
+    // The receipt the first confirmation wrote, as the replay reads it back by idempotency key:
+    // its number, the order it fulfilled, the destination store and its lines.
+    function storedReceipt() {
+      return {
+        id: 'gr1',
+        number: 'GR-001',
+        idempotencyKey: KEY,
+        createdAt: new Date('2026-02-02T03:04:05Z'),
+        purchaseOrder: { number: 'PO-DEMO-001', status: 'PARTIALLY_RECEIVED' as const },
+        store: { code: 'B01' },
+        lines: [
+          { sku: 'SKU001', productName: 'Drinking water pack of 6', unit: 'pack', quantity: 8 },
+        ],
+      };
+    }
 
-    const outcome = call(controller.confirm(staffB01), {
+    // A confirmation whose create hits the unique idempotency key, standing in for a retry of an
+    // action that already posted. `findUnique` reads the original receipt back.
+    function createReplay(receipt: ReturnType<typeof storedReceipt> | null) {
+      const { tx, goodsReceiptCreate } = createTx(orderRow());
+      goodsReceiptCreate.mockRejectedValue(
+        Object.assign(new Error('Unique constraint failed on the fields: (`idempotencyKey`)'), {
+          code: 'P2002',
+          meta: { target: ['idempotencyKey'] },
+        }),
+      );
+      const findUnique = vi.fn().mockResolvedValue(receipt);
+      return { tx, findUnique, prisma: { goodsReceipt: { findUnique } } };
+    }
+
+    const resend = {
       purchaseOrderNumber: 'PO-DEMO-001',
       idempotencyKey: KEY,
       lines: [{ sku: 'SKU001', quantity: 8 }],
+    };
+
+    it('replays even when the order is now Completed, instead of re-running the over-receipt cap', async () => {
+      // The receipt that completed the order: a retry of it must return the original, not be
+      // rejected by the status or over-receipt checks that a fresh confirmation would run.
+      const completing = {
+        ...storedReceipt(),
+        purchaseOrder: { number: 'PO-DEMO-001', status: 'COMPLETED' as const },
+        lines: [
+          { sku: 'SKU001', productName: 'Drinking water pack of 6', unit: 'pack', quantity: 20 },
+        ],
+      };
+      const findUnique = vi.fn().mockResolvedValue(completing);
+      // The order is fully received, so a fresh confirmation would be refused; the stub proves the
+      // replay path never reaches the transaction.
+      const { tx } = createTx(orderRow({ status: 'COMPLETED' }));
+      const { stock, apply, transact } = createStock(tx);
+      const controller = await createController(stock, { goodsReceipt: { findUnique } });
+
+      const receipt = await call(controller.confirm(staffB01), {
+        purchaseOrderNumber: 'PO-DEMO-001',
+        idempotencyKey: KEY,
+        lines: [{ sku: 'SKU001', quantity: 20 }],
+      });
+
+      expect(receipt).toMatchObject({ number: 'GR-001', orderStatus: 'COMPLETED' });
+      expect(transact).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
     });
 
-    await expect(outcome).rejects.toMatchObject({ code: 'CONFLICT' });
-    await expect(outcome).rejects.not.toHaveProperty('message', expect.stringContaining('Unique'));
+    it('returns the original receipt instead of double-counting stock, and leaks no database detail', async () => {
+      const { tx, findUnique, prisma } = createReplay(storedReceipt());
+      const { stock, apply } = createStock(tx);
+      const controller = await createController(stock, prisma);
+
+      const receipt = await call(controller.confirm(staffB01), resend);
+
+      // The original receipt, reconstructed in the GoodsReceipt shape — not a new one.
+      expect(receipt).toEqual({
+        id: 'gr1',
+        number: 'GR-001',
+        purchaseOrderNumber: 'PO-DEMO-001',
+        orderStatus: 'PARTIALLY_RECEIVED',
+        storeCode: 'B01',
+        createdAt: '2026-02-02T03:04:05.000Z',
+        lines: [{ sku: 'SKU001', name: 'Drinking water pack of 6', unit: 'pack', quantity: 8 }],
+      });
+      expect(findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { idempotencyKey: KEY } }),
+      );
+      // No second posting: the stock movement never ran on the replay.
+      expect(apply).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a receipt that belongs to another store (NFR-01)', async () => {
+      const { tx, prisma } = createReplay(storedReceipt());
+      const { stock } = createStock(tx);
+      const controller = await createController(stock, prisma);
+      const staffB02: User = { ...staffB01, id: 'u-b02', storeId: 'B02' };
+
+      await expect(call(controller.confirm(staffB02), resend)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('falls back to a conflict when the key clashed but no receipt can be read back', async () => {
+      const { tx, prisma } = createReplay(null);
+      const { stock } = createStock(tx);
+      const controller = await createController(stock, prisma);
+
+      const outcome = call(controller.confirm(staffB01), resend);
+      await expect(outcome).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(outcome).rejects.not.toHaveProperty(
+        'message',
+        expect.stringContaining('Unique'),
+      );
+    });
   });
 
   it('is only for store employees (GR-01)', () => {

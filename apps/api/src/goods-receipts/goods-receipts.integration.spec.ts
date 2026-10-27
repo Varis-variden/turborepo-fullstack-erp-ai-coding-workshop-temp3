@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaService } from '../database/prisma.service.js';
 import { StockService } from '../inventory/stock.service.js';
 import { createStockFixture, createTestPrisma } from '../test/postgres.js';
-import { DUPLICATE_RECEIPT_MESSAGE, GoodsReceiptsController } from './goods-receipts.controller.js';
+import { GoodsReceiptsController } from './goods-receipts.controller.js';
 
 // Real Postgres, no stubs: the single transaction, the unique idempotency key and the stock
 // movement are database behaviour that a stubbed Prisma cannot prove (AC-01, NFR-03).
@@ -219,21 +219,56 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     );
   });
 
-  it('NFR-03: the idempotency key is unique in the database, so a second use posts nothing', async () => {
+  it('AC-02 (GR-04): resending the identical request returns the original receipt, stock stays 18, received stays 8; a fresh key still posts', async () => {
     const { stock, sku, order, staff } = await approvedOrder();
-    const input = {
+    const request = {
       purchaseOrderNumber: order.number,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ sku, quantity: 8 }],
     };
 
-    await call(controller.confirm(staff), input);
-    await expect(call(controller.confirm(staff), input)).rejects.toMatchObject({
-      code: 'CONFLICT',
-      message: DUPLICATE_RECEIPT_MESSAGE,
-    });
+    const first = await call(controller.confirm(staff), request);
+    // The identical request again — same key, same lines — as a retry after a flaky network.
+    const replay = await call(controller.confirm(staff), request);
 
+    // The original receipt is handed back, not a new one.
+    expect(replay).toEqual(first);
+    // Stock, cumulative received, the single receipt and the single movement are all unchanged:
+    // the resend counted nothing.
     expect(await stock.balance()).toBe(18);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(1);
+    expect(await stock.movements()).toHaveLength(1);
+    const page = await call(controller.listOrders(staff), { page: 1, pageSize: 20 });
+    expect(page.items[0]!.lines[0]).toMatchObject({ received: 8, outstanding: 12 });
+
+    // A genuinely new receipt with a fresh key still posts: it is a different action (GR-04).
+    const second = await call(controller.confirm(staff), {
+      purchaseOrderNumber: order.number,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ sku, quantity: 4 }],
+    });
+    expect(second.id).not.toBe(first.id);
+    expect(await stock.balance()).toBe(22);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(2);
+  });
+
+  it('GR-04: resending the receipt that completed the order replays it, not the over-receipt refusal', async () => {
+    const { stock, sku, order, staff } = await approvedOrder();
+    // One receipt that takes the order all the way to Completed.
+    const request = {
+      purchaseOrderNumber: order.number,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ sku, quantity: 20 }],
+    };
+
+    const completed = await call(controller.confirm(staff), request);
+    expect(completed.orderStatus).toBe('COMPLETED');
+
+    // Resending it would fail the over-receipt cap if it re-ran the confirmation (20 + 20 > 20).
+    // Instead the key is recognised and the original receipt is replayed, stock unchanged.
+    const replay = await call(controller.confirm(staff), request);
+    expect(replay).toEqual(completed);
+    expect(await stock.balance()).toBe(30);
     expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(1);
     expect(await stock.movements()).toHaveLength(1);
   });

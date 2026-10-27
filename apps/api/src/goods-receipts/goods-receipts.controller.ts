@@ -17,6 +17,8 @@ import { StockService } from '../inventory/stock.service.js';
 /** An order can be received while it is Approved or Partially Received (GR-01). */
 const RECEIVABLE_STATUSES = ['APPROVED', 'PARTIALLY_RECEIVED'] as const;
 
+/** Shown only when an idempotency key clashed but the original receipt cannot be read back — the
+ * clash was not a replay. The raw constraint error carries database detail, so say it in Thai. */
 export const DUPLICATE_RECEIPT_MESSAGE =
   'คำขอรับสินค้านี้ถูกบันทึกไปแล้ว กรุณาตรวจสอบใบรับสินค้าก่อนทำรายการใหม่';
 
@@ -74,6 +76,36 @@ function toReceivingOrder(row: OrderRow): ReceivingOrder {
   };
 }
 
+/** A confirmed receipt's lines as the GoodsReceipt output carries them, whether just created or
+ * read back for a replay: both sources snapshot `productName`, `unit` and `quantity` per SKU. */
+type ReceiptLineRow = { sku: string; productName: string; unit: string; quantity: number };
+
+/** The GoodsReceipt response, assembled the one way for both a fresh confirmation and a replay. */
+function toGoodsReceipt(receipt: {
+  id: string;
+  number: string;
+  purchaseOrderNumber: string;
+  orderStatus: GoodsReceipt['orderStatus'];
+  storeCode: string;
+  createdAt: Date;
+  lines: ReceiptLineRow[];
+}): GoodsReceipt {
+  return {
+    id: receipt.id,
+    number: receipt.number,
+    purchaseOrderNumber: receipt.purchaseOrderNumber,
+    orderStatus: receipt.orderStatus,
+    storeCode: receipt.storeCode,
+    createdAt: receipt.createdAt.toISOString(),
+    lines: receipt.lines.map((line) => ({
+      sku: line.sku,
+      name: line.productName,
+      unit: line.unit,
+      quantity: line.quantity,
+    })),
+  };
+}
+
 @Controller()
 export class GoodsReceiptsController {
   constructor(
@@ -110,16 +142,59 @@ export class GoodsReceiptsController {
   @Implement(contract.goodsReceipts.confirm)
   confirm(@CurrentUser() user: User) {
     return implement(contract.goodsReceipts.confirm).handler(async ({ input }) => {
+      // A retry of an action that already posted returns the original receipt, whatever the order
+      // has become since (it may be fully received now): the key is looked up before the status
+      // and over-receipt checks a fresh confirmation runs, so a replay is never refused by them
+      // and never double-counts stock (GR-04).
+      const replay = await this.replayReceipt(user, input.idempotencyKey);
+      if (replay) return replay;
+
       try {
         return await this.confirmReceipt(user, input);
       } catch (error) {
-        // The key is unique-constrained (NFR-03): a second confirmation with the same key cannot
-        // post. The raw constraint error carries database detail, so say it in Thai instead.
+        // The key is unique-constrained (NFR-03): two identical requests racing each other both
+        // pass the lookup above, then one commits and the other's insert hits the constraint.
+        // The loser replays the receipt the winner just wrote rather than failing (GR-04).
         if (isUniqueConstraintError(error, 'idempotencyKey')) {
+          const raced = await this.replayReceipt(user, input.idempotencyKey);
+          if (raced) return raced;
           throw new ORPCError('CONFLICT', { message: DUPLICATE_RECEIPT_MESSAGE });
         }
         throw error;
       }
+    });
+  }
+
+  /**
+   * The receipt a previous confirmation wrote under this idempotency key, in the GoodsReceipt
+   * shape, or `undefined` if the key has not been used (GR-04). Store scope is enforced here too,
+   * so a replay can never hand one store's receipt to another (NFR-01).
+   */
+  private async replayReceipt(
+    user: User,
+    idempotencyKey: string,
+  ): Promise<GoodsReceipt | undefined> {
+    const receipt = await this.prisma.goodsReceipt.findUnique({
+      where: { idempotencyKey },
+      include: {
+        purchaseOrder: { select: { number: true, status: true } },
+        store: { select: { code: true } },
+        lines: {
+          orderBy: { sku: 'asc' },
+          select: { sku: true, productName: true, unit: true, quantity: true },
+        },
+      },
+    });
+    if (!receipt) return undefined;
+    assertStoreScope(user, receipt.store.code);
+    return toGoodsReceipt({
+      id: receipt.id,
+      number: receipt.number,
+      purchaseOrderNumber: receipt.purchaseOrder.number,
+      orderStatus: receipt.purchaseOrder.status,
+      storeCode: receipt.store.code,
+      createdAt: receipt.createdAt,
+      lines: receipt.lines,
     });
   }
 
@@ -225,20 +300,15 @@ export class GoodsReceiptsController {
         },
       });
 
-      return {
+      return toGoodsReceipt({
         id: receipt.id,
         number: receipt.number,
         purchaseOrderNumber: order.number,
         orderStatus,
         storeCode: order.store.code,
-        createdAt: receipt.createdAt.toISOString(),
-        lines: receipt.lines.map((line) => ({
-          sku: line.sku,
-          name: line.productName,
-          unit: line.unit,
-          quantity: line.quantity,
-        })),
-      };
+        createdAt: receipt.createdAt,
+        lines: receipt.lines,
+      });
     });
   }
 }
