@@ -17,21 +17,24 @@ test.describe('stock search', () => {
 
     // The seeded B01 opening balances: SKU001 = 10 (above threshold 3, not low),
     // SKU002 = 5 (above threshold, not low), SKU003 = 0 (at or below threshold, low stock).
+    // Assert the quantity and threshold cells themselves, not the whole row: a row-wide
+    // toContainText('10') would also be satisfied by "SKU001" or any other cell.
     const water = page.getByRole('row', { name: /SKU001/ });
     await expect(water).toBeVisible();
-    await expect(water).toContainText('B01');
-    await expect(water).toContainText('10');
-    await expect(water).toContainText('pack');
-    await expect(water).toContainText('3');
+    await expect(water.getByRole('cell', { name: 'B01', exact: true })).toBeVisible();
+    await expect(water.getByRole('cell', { name: '10', exact: true })).toBeVisible();
+    await expect(water.getByRole('cell', { name: 'pack', exact: true })).toBeVisible();
+    await expect(water.getByRole('cell', { name: '3', exact: true })).toBeVisible();
     await expect(water).not.toContainText('สต็อกต่ำ');
 
     const detergent = page.getByRole('row', { name: /SKU003/ });
-    await expect(detergent).toContainText('0');
+    await expect(detergent.getByRole('cell', { name: '0', exact: true })).toBeVisible();
     await expect(detergent).toContainText('สต็อกต่ำ');
 
     // Searching by SKU narrows to the one matching product.
     await search.fill('SKU002');
-    await expect(page.getByRole('row', { name: /SKU002/ })).toContainText('5');
+    const tissue = page.getByRole('row', { name: /SKU002/ });
+    await expect(tissue.getByRole('cell', { name: '5', exact: true })).toBeVisible();
     await expect(page.getByRole('row', { name: /SKU001/ })).toHaveCount(0);
     await expect(page.getByRole('row', { name: /SKU003/ })).toHaveCount(0);
 
@@ -44,5 +47,37 @@ test.describe('stock search', () => {
 
     // A store employee is scoped to their own store server-side: no cross-store filter is offered.
     await expect(page.getByLabel('สาขา')).toHaveCount(0);
+  });
+});
+
+// The "and store" axis of the Demo line: only an unassigned user (ADMIN/MANAGER) drives a store
+// filter; a store employee is scoped server-side (above). The admin narrows to B01 and B02.
+test.describe('stock search by store', () => {
+  test.use({ storageState: storageState('admin') });
+
+  test('an unassigned user filters the stock search by store', async ({ page }) => {
+    await page.goto('/inventory');
+    await expect(page.getByRole('heading', { name: 'สต็อกสินค้า', level: 1 })).toBeVisible();
+
+    const storeFilter = page.getByLabel('สาขา');
+    await expect(storeFilter).toBeVisible();
+
+    // Narrow to B01: SKU001 shows the B01 quantity of 10.
+    await storeFilter.selectOption('B01');
+    const waterB01 = page.getByRole('row', { name: /SKU001/ });
+    await expect(waterB01).toBeVisible();
+    await expect(waterB01.getByRole('cell', { name: 'B01', exact: true })).toBeVisible();
+    await expect(waterB01.getByRole('cell', { name: '10', exact: true })).toBeVisible();
+    // No B02 rows while scoped to B01.
+    await expect(page.getByRole('cell', { name: 'B02', exact: true })).toHaveCount(0);
+
+    // Narrow to B02: SKU001 shows the B02 quantity of 0, low stock against the threshold of 3.
+    await storeFilter.selectOption('B02');
+    const waterB02 = page.getByRole('row', { name: /SKU001/ });
+    await expect(waterB02).toBeVisible();
+    await expect(waterB02.getByRole('cell', { name: 'B02', exact: true })).toBeVisible();
+    await expect(waterB02.getByRole('cell', { name: '0', exact: true })).toBeVisible();
+    await expect(waterB02).toContainText('สต็อกต่ำ');
+    await expect(page.getByRole('cell', { name: 'B01', exact: true })).toHaveCount(0);
   });
 });

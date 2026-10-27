@@ -110,6 +110,22 @@ async function main() {
       });
 
       const quantity = code === 'B01' ? openingB01 : 0;
+
+      // The ledger is append-only: a re-seed may only lay down the opening movement, never
+      // rewind a store that has since posted real movements (RECEIPT/SALE/non-opening ADJUSTMENT).
+      // If any such movement exists, the current balance is derived from the ledger by the
+      // posting path; the seed leaves both the balance and the opening movement untouched so it
+      // can never drift from the ledger. On a fresh (demo-only) database there are none, so the
+      // opening balance is (re)written deterministically.
+      const postedMovements = await prisma.stockMovement.count({
+        where: {
+          productId: row.id,
+          storeId,
+          NOT: { type: 'ADJUSTMENT', sourceType: 'OPENING' },
+        },
+      });
+      if (postedMovements > 0) continue;
+
       await prisma.stockBalance.upsert({
         where: { productId_storeId: { productId: row.id, storeId } },
         update: { quantity },
