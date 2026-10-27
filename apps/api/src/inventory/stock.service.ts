@@ -7,7 +7,7 @@ import { PrismaService } from '../database/prisma.service.js';
 export type StockChange = {
   productId: string;
   storeId: string;
-  /** Positive to increase, negative to decrease. Whole units, never zero. */
+  /** Positive to increase, negative to decrease. Whole units. */
   quantityChange: number;
   type: StockMovementType;
   /** The document that caused the movement, e.g. "SAL" or "GR", plus its id. */
@@ -51,7 +51,8 @@ function isSerializationFailure(error: unknown): boolean {
  * balance it validates against, so a client-supplied balance is never trusted (INV-04) and the
  * movement, the balance and anything else the caller writes through `ledger.tx` post together or
  * roll back together (INV-03). When Postgres aborts the loser of a race, the work is retried once
- * against the new balance; a second conflict is rejected with a Thai error.
+ * against the new balance; a second conflict is rejected with a Thai error. Because `work` can
+ * run twice, it must only touch the database through the ledger, never send mail or call out.
  */
 @Injectable()
 export class StockService {
