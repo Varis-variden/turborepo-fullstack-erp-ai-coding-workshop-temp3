@@ -62,6 +62,16 @@ export function RootLayout() {
               >
                 ใบสั่งซื้อ
               </NavLink>
+              {user?.role === 'STAFF' && (
+                <NavLink
+                  to="/goods-receipts"
+                  className={({ isActive }) =>
+                    cn('text-muted-foreground hover:text-foreground', isActive && 'text-foreground')
+                  }
+                >
+                  รับสินค้า
+                </NavLink>
+              )}
             </nav>
           </div>
           <UserMenu />
