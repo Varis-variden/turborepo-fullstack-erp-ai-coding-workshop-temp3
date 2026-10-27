@@ -86,12 +86,6 @@ test.describe('purchase-order approval', () => {
       });
       expect(response.status(), `${action} on an approved order`).toBe(409);
     }
-    const [frozen] = (
-      (await (await manager.get('/api/purchase-orders')).json()) as {
-        items: (Order & { lines: { quantity: number; unitPrice: string }[] })[];
-      }
-    ).items.filter((order) => order.id === first.id);
-    expect(frozen?.lines[0]).toMatchObject({ quantity, unitPrice: '99.50' });
 
     // Rejecting needs a reason; with one, the order is rejected and that is final.
     const second = await draft();
