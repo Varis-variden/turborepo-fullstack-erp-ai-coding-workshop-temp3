@@ -36,6 +36,12 @@
     "test": {
       "dependsOn": ["^build", "db:generate"]
     },
+    // Real-Postgres specs: needs DATABASE_URL (default: the compose Postgres) with migrations applied.
+    // Never cached, since the result depends on the database, not on the source files.
+    "test:integration": {
+      "dependsOn": ["^build", "db:generate"],
+      "cache": false
+    },
     "e2e": {
       "dependsOn": ["@erp/api#build", "@erp/web#build"],
       "passThroughEnv": [

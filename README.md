@@ -87,7 +87,8 @@ Run commands **inside the api container** so you don't need Node on your machine
 docker compose exec api pnpm db:migrate --name add_customers   # after editing schema.prisma
 docker compose exec api pnpm db:seed
 docker compose exec api pnpm db:reset                          # wipe + re-migrate + seed
-docker compose exec api pnpm check                             # lint + typecheck + test + build
+docker compose exec api pnpm check                             # lint + typecheck + test + test:integration + build
+docker compose exec api pnpm test:integration                  # only the real-Postgres specs (*.integration.spec.ts)
 docker compose exec api pnpm add <pkg> --filter @erp/web       # add a dependency
 ```
 
