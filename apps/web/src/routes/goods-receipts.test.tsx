@@ -179,7 +179,11 @@ describe('GoodsReceiptsPage', () => {
   it('shows the error when the orders cannot be loaded', async () => {
     mockApi({
       'GET /auth/me': { user: staff },
-      'GET /goods-receipts/orders': apiError(500, 'INTERNAL_SERVER_ERROR', 'เกิดข้อผิดพลาดภายในระบบ'),
+      'GET /goods-receipts/orders': apiError(
+        500,
+        'INTERNAL_SERVER_ERROR',
+        'เกิดข้อผิดพลาดภายในระบบ',
+      ),
     });
 
     renderPage();

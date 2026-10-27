@@ -34,7 +34,8 @@ export function isUniqueConstraintError(error: unknown, field?: string): boolean
   if (field === undefined) return true;
 
   const target = known.meta?.target;
-  if (target !== undefined) return Array.isArray(target) ? target.includes(field) : target === field;
+  if (target !== undefined)
+    return Array.isArray(target) ? target.includes(field) : target === field;
 
   // Through the driver adapter the constraint is named by its fields or, for a unique index, by
   // its name: `<Model>_<field>_key`.

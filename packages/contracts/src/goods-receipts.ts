@@ -128,7 +128,8 @@ export const goodsReceiptsContract = {
     .route({
       method: 'POST',
       path: '/goods-receipts',
-      summary: 'Confirm a goods receipt: GR- number, stock increase and movements in one transaction',
+      summary:
+        'Confirm a goods receipt: GR- number, stock increase and movements in one transaction',
       tags: ['Goods receipts'],
     })
     .input(ConfirmGoodsReceiptInputSchema)
