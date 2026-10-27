@@ -108,6 +108,8 @@ Claude Code and Codex can also install the whole collection as a **plugin**: `cl
 
 `to-spec` and `to-tickets` both "publish to the issue tracker" and refuse to guess which one. A short setup skill records the answer in the repository.
 
+The tracker is a choice, and this file is the whole of it: the skills never name GitHub. Lesson 11 swaps the file for a Jira one and runs the same three skills through an MCP server.
+
 In Kiro CLI:
 
 ```

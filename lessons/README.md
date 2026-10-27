@@ -14,3 +14,4 @@ Read these alongside the workshop. Each lesson explains the ideas behind one par
 | 8   | [An AI reviewer on every pull request: Kiro in GitHub Actions](08-ai-reviews-the-pull-request.md)          | 75–90 min |
 | 9   | [The loop without the typing: a headless implementer over the frontier](09-the-loop-without-the-typing.md) | 75–90 min |
 | 10  | [The Demo line, run by a machine: Playwright on every pull request](10-the-demo-line-run-by-a-machine.md)  | 60–75 min |
+| 11  | [One server, on purpose: planning into Jira through MCP](11-one-server-on-purpose-jira-mcp.md)             | 60–75 min |
