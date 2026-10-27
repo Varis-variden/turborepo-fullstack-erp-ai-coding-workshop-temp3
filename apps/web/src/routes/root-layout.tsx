@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from 'react-router';
 import { UserMenu } from '@/components/user-menu';
+import { useCurrentUser } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 export function RootLayout() {
+  const user = useCurrentUser();
   return (
     <div className="min-h-svh bg-background text-foreground">
       <header className="border-b">
@@ -26,6 +28,16 @@ export function RootLayout() {
               >
                 สต็อก
               </NavLink>
+              {user?.role === 'MANAGER' && (
+                <NavLink
+                  to="/stock-adjustments"
+                  className={({ isActive }) =>
+                    cn('text-muted-foreground hover:text-foreground', isActive && 'text-foreground')
+                  }
+                >
+                  ปรับสต็อก
+                </NavLink>
+              )}
               <NavLink
                 to="/stores"
                 className={({ isActive }) =>
