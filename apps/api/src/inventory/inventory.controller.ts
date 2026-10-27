@@ -103,82 +103,84 @@ export class InventoryController {
   @Roles('MANAGER')
   @Implement(contract.inventory.adjust)
   adjust(@CurrentUser() user: User) {
-    return implement(contract.inventory.adjust).handler(async ({ input }): Promise<StockAdjustmentResult> => {
-      const { sku, storeCode, quantityChange, reason } = input;
+    return implement(contract.inventory.adjust).handler(
+      async ({ input }): Promise<StockAdjustmentResult> => {
+        const { sku, storeCode, quantityChange, reason } = input;
 
-      const [product, store] = await Promise.all([
-        this.prisma.product.findUnique({ where: { sku } }),
-        this.prisma.store.findUnique({ where: { code: storeCode } }),
-      ]);
-      if (!product) {
-        throw new ORPCError('BAD_REQUEST', {
-          message: `ไม่พบสินค้า ${sku} กรุณาตรวจสอบรหัสสินค้า (SKU)`,
-        });
-      }
-      if (!product.active) {
-        throw new ORPCError('BAD_REQUEST', {
-          message: `สินค้า ${sku} ปิดใช้งานแล้ว ไม่สามารถปรับสต็อกได้`,
-        });
-      }
-      if (!store) {
-        throw new ORPCError('BAD_REQUEST', {
-          message: `ไม่พบสาขา ${storeCode} กรุณาตรวจสอบรหัสสาขา`,
-        });
-      }
-
-      // A manager has storeId === null, so this never rejects today; it keeps the write path
-      // honest the moment a store-bound role is allowed to adjust (NFR-01). User.storeId holds
-      // the store code, so scope is checked against the code, as stock search does.
-      assertStoreScope(user, store.code);
-
-      try {
-        // The movement, the balance and the POSTED audit row post together or roll back together
-        // (INV-03): if the ledger rejects an over-reduction, the audit row written here is
-        // discarded with the transaction, and the REJECTED row is written below instead.
-        return await this.stock.transact(async (ledger) => {
-          const movement = await ledger.apply({
-            productId: product.id,
-            storeId: store.id,
-            quantityChange,
-            type: 'ADJUSTMENT',
-            sourceType: 'ADJUSTMENT',
-            actorId: user.id,
+        const [product, store] = await Promise.all([
+          this.prisma.product.findUnique({ where: { sku } }),
+          this.prisma.store.findUnique({ where: { code: storeCode } }),
+        ]);
+        if (!product) {
+          throw new ORPCError('BAD_REQUEST', {
+            message: `ไม่พบสินค้า ${sku} กรุณาตรวจสอบรหัสสินค้า (SKU)`,
           });
-          await ledger.tx.auditLog.create({
+        }
+        if (!product.active) {
+          throw new ORPCError('BAD_REQUEST', {
+            message: `สินค้า ${sku} ปิดใช้งานแล้ว ไม่สามารถปรับสต็อกได้`,
+          });
+        }
+        if (!store) {
+          throw new ORPCError('BAD_REQUEST', {
+            message: `ไม่พบสาขา ${storeCode} กรุณาตรวจสอบรหัสสาขา`,
+          });
+        }
+
+        // A manager has storeId === null, so this never rejects today; it keeps the write path
+        // honest the moment a store-bound role is allowed to adjust (NFR-01). User.storeId holds
+        // the store code, so scope is checked against the code, as stock search does.
+        assertStoreScope(user, store.code);
+
+        try {
+          // The movement, the balance and the POSTED audit row post together or roll back together
+          // (INV-03): if the ledger rejects an over-reduction, the audit row written here is
+          // discarded with the transaction, and the REJECTED row is written below instead.
+          return await this.stock.transact(async (ledger) => {
+            const movement = await ledger.apply({
+              productId: product.id,
+              storeId: store.id,
+              quantityChange,
+              type: 'ADJUSTMENT',
+              sourceType: 'ADJUSTMENT',
+              actorId: user.id,
+            });
+            await ledger.tx.auditLog.create({
+              data: {
+                action: 'STOCK_ADJUSTMENT',
+                actorId: user.id,
+                storeId: store.id,
+                sourceType: 'ADJUSTMENT',
+                sourceId: movement.id,
+                outcome: 'POSTED',
+                detail: reason,
+              },
+            });
+            return {
+              sku: product.sku,
+              storeCode: store.code,
+              quantityChange: movement.quantityChange,
+              balanceBefore: movement.balanceBefore,
+              balanceAfter: movement.balanceAfter,
+            };
+          });
+        } catch (error) {
+          // A rejected adjustment is itself audited (NFR-03): outcome REJECTED, no source document
+          // because no movement was written. The reason is still recorded.
+          await this.prisma.auditLog.create({
             data: {
               action: 'STOCK_ADJUSTMENT',
               actorId: user.id,
               storeId: store.id,
               sourceType: 'ADJUSTMENT',
-              sourceId: movement.id,
-              outcome: 'POSTED',
+              sourceId: null,
+              outcome: 'REJECTED',
               detail: reason,
             },
           });
-          return {
-            sku: product.sku,
-            storeCode: store.code,
-            quantityChange: movement.quantityChange,
-            balanceBefore: movement.balanceBefore,
-            balanceAfter: movement.balanceAfter,
-          };
-        });
-      } catch (error) {
-        // A rejected adjustment is itself audited (NFR-03): outcome REJECTED, no source document
-        // because no movement was written. The reason is still recorded.
-        await this.prisma.auditLog.create({
-          data: {
-            action: 'STOCK_ADJUSTMENT',
-            actorId: user.id,
-            storeId: store.id,
-            sourceType: 'ADJUSTMENT',
-            sourceId: null,
-            outcome: 'REJECTED',
-            detail: reason,
-          },
-        });
-        throw error;
-      }
-    });
+          throw error;
+        }
+      },
+    );
   }
 }

@@ -99,8 +99,9 @@ function AdjustStockForm() {
         setResult(data);
         setQuantityChange('');
         setReason('');
-        queryClient.invalidateQueries({ queryKey: orpc.audit.list.key() });
       },
+      // A rejected adjustment is also written to the audit log, so refresh it either way.
+      onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.audit.list.key() }),
     }),
   );
 

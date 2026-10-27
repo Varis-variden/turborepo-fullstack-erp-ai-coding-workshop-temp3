@@ -7,7 +7,12 @@ import {
 } from './audit.js';
 
 describe('AdjustStockInputSchema', () => {
-  const base = { sku: 'SKU001', storeCode: 'B01', quantityChange: 5, reason: 'Stock count correction' };
+  const base = {
+    sku: 'SKU001',
+    storeCode: 'B01',
+    quantityChange: 5,
+    reason: 'Stock count correction',
+  };
 
   it('accepts a positive adjustment with a reason', () => {
     const result = AdjustStockInputSchema.safeParse(base);
@@ -31,7 +36,11 @@ describe('AdjustStockInputSchema', () => {
   });
 
   it('rejects a missing reason (reason is mandatory, INV-05)', () => {
-    const result = AdjustStockInputSchema.safeParse({ sku: 'SKU001', storeCode: 'B01', quantityChange: 5 });
+    const result = AdjustStockInputSchema.safeParse({
+      sku: 'SKU001',
+      storeCode: 'B01',
+      quantityChange: 5,
+    });
     expect(result.success).toBe(false);
   });
 
@@ -74,7 +83,9 @@ describe('AuditEntrySchema', () => {
   });
 
   it('accepts a null source id and detail', () => {
-    expect(AuditEntrySchema.safeParse({ ...entry, sourceId: null, detail: null }).success).toBe(true);
+    expect(AuditEntrySchema.safeParse({ ...entry, sourceId: null, detail: null }).success).toBe(
+      true,
+    );
   });
 
   it('rejects an unknown outcome', () => {

@@ -170,7 +170,13 @@ describe('InventoryController.search', () => {
   });
 });
 
-const water = { id: 'p1', sku: 'SKU001', name: 'Drinking water pack of 6', unit: 'pack', active: true };
+const water = {
+  id: 'p1',
+  sku: 'SKU001',
+  name: 'Drinking water pack of 6',
+  unit: 'pack',
+  active: true,
+};
 const storeB01 = { id: 'st-b01', code: 'B01', name: 'Central Store' };
 
 /**
@@ -260,9 +266,13 @@ describe('InventoryController.adjust', () => {
   });
 
   it('rejects a reduction greater than the available balance, writes no movement, and records a REJECTED audit entry', async () => {
-    const apply = vi.fn().mockRejectedValue(
-      new (await import('@orpc/server')).ORPCError('CONFLICT', { message: INSUFFICIENT_STOCK_MESSAGE }),
-    );
+    const apply = vi
+      .fn()
+      .mockRejectedValue(
+        new (await import('@orpc/server')).ORPCError('CONFLICT', {
+          message: INSUFFICIENT_STOCK_MESSAGE,
+        }),
+      );
     const auditCreate = vi.fn().mockResolvedValue({});
     const rejectedAuditCreate = vi.fn().mockResolvedValue({});
     const controller = await createController(
@@ -275,7 +285,12 @@ describe('InventoryController.adjust', () => {
     );
 
     await expect(
-      call(controller.adjust(manager), { sku: 'SKU001', storeCode: 'B01', quantityChange: -999, reason: 'ของเสีย' }),
+      call(controller.adjust(manager), {
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: -999,
+        reason: 'ของเสีย',
+      }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
 
     // No audit row was written inside the rolled-back transaction.
