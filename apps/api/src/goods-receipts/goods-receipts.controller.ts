@@ -17,6 +17,8 @@ import { StockService } from '../inventory/stock.service.js';
 /** An order can be received while it is Approved or Partially Received (GR-01). */
 const RECEIVABLE_STATUSES = ['APPROVED', 'PARTIALLY_RECEIVED'] as const;
 
+/** Shown only when an idempotency key clashed but the original receipt cannot be read back — the
+ * clash was not a replay. The raw constraint error carries database detail, so say it in Thai. */
 export const DUPLICATE_RECEIPT_MESSAGE =
   'คำขอรับสินค้านี้ถูกบันทึกไปแล้ว กรุณาตรวจสอบใบรับสินค้าก่อนทำรายการใหม่';
 
@@ -113,14 +115,54 @@ export class GoodsReceiptsController {
       try {
         return await this.confirmReceipt(user, input);
       } catch (error) {
-        // The key is unique-constrained (NFR-03): a second confirmation with the same key cannot
-        // post. The raw constraint error carries database detail, so say it in Thai instead.
+        // The key is unique-constrained (NFR-03): a retry of the same action cannot post twice.
+        // Instead of failing, replay the receipt the first confirmation already wrote, so a flaky
+        // network or a double click returns the original and never double-counts stock (GR-04).
         if (isUniqueConstraintError(error, 'idempotencyKey')) {
-          throw new ORPCError('CONFLICT', { message: DUPLICATE_RECEIPT_MESSAGE });
+          return this.replayReceipt(user, input.idempotencyKey);
         }
         throw error;
       }
     });
+  }
+
+  /**
+   * Read back the receipt a previous confirmation wrote under this idempotency key and return it
+   * in the GoodsReceipt shape (GR-04). Store scope is enforced here too, so a replay can never
+   * hand one store's receipt to another (NFR-01). If the key clashed but no receipt can be read
+   * back, the clash was something other than a replay: surface it as a conflict without leaking
+   * database detail (NFR-04).
+   */
+  private async replayReceipt(user: User, idempotencyKey: string): Promise<GoodsReceipt> {
+    const receipt = await this.prisma.goodsReceipt.findUnique({
+      where: { idempotencyKey },
+      include: {
+        purchaseOrder: { select: { number: true, status: true } },
+        store: { select: { code: true } },
+        lines: {
+          orderBy: { sku: 'asc' },
+          select: { sku: true, productName: true, unit: true, quantity: true },
+        },
+      },
+    });
+    if (!receipt) {
+      throw new ORPCError('CONFLICT', { message: DUPLICATE_RECEIPT_MESSAGE });
+    }
+    assertStoreScope(user, receipt.store.code);
+    return {
+      id: receipt.id,
+      number: receipt.number,
+      purchaseOrderNumber: receipt.purchaseOrder.number,
+      orderStatus: receipt.purchaseOrder.status,
+      storeCode: receipt.store.code,
+      createdAt: receipt.createdAt.toISOString(),
+      lines: receipt.lines.map((line) => ({
+        sku: line.sku,
+        name: line.productName,
+        unit: line.unit,
+        quantity: line.quantity,
+      })),
+    };
   }
 
   /**
