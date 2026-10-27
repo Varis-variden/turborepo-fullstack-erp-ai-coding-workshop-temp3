@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract';
 import * as z from 'zod';
+import { AdjustStockInputSchema, StockAdjustmentResultSchema } from './audit.js';
 import { paginated, PaginationInputSchema } from './pagination.js';
 
 /**
@@ -56,4 +57,13 @@ export const inventoryContract = {
     })
     .input(SearchStockInputSchema)
     .output(StockItemPageSchema),
+  adjust: oc
+    .route({
+      method: 'POST',
+      path: '/inventory/adjustments',
+      summary: 'Manager stock adjustment with a mandatory reason and an audit entry',
+      tags: ['Inventory'],
+    })
+    .input(AdjustStockInputSchema)
+    .output(StockAdjustmentResultSchema),
 };
