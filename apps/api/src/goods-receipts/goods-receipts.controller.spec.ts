@@ -216,7 +216,7 @@ describe('GoodsReceiptsController.confirm', () => {
       });
     });
 
-    it('NFR-01: rejects a store employee receiving for another store', async () => {
+    it('AC-04 (GR-01, NFR-01): rejects a store employee receiving for another store', async () => {
       const staffB02: User = { ...staffB01, id: 'u-b02', storeId: 'B02' };
       expect(await refused(orderRow(), receive(1), staffB02)).toMatchObject({ code: 'FORBIDDEN' });
     });
@@ -233,6 +233,13 @@ describe('GoodsReceiptsController.confirm', () => {
       order.lines[0]!.receiptLines = [{ quantity: 8 }];
 
       expect(await refused(order, receive(13))).toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringContaining('SKU001'),
+      });
+    });
+
+    it('AC-03 (GR-02): receiving 21 against an Approved order of 20 is rejected and nothing is written', async () => {
+      expect(await refused(orderRow(), receive(21))).toMatchObject({
         code: 'BAD_REQUEST',
         message: expect.stringContaining('SKU001'),
       });

@@ -134,6 +134,82 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     );
   });
 
+  it('AC-03 (GR-02): receiving 21 against an order of 20 is rejected, with no receipt, no movement, stock still 10 and the order still Approved', async () => {
+    const { stock, sku, order, staff } = await approvedOrder();
+
+    await expect(
+      call(controller.confirm(staff), {
+        purchaseOrderNumber: order.number,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ sku, quantity: 21 }],
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining(sku) });
+
+    expect(await stock.balance()).toBe(10);
+    expect(await stock.movements()).toEqual([]);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(0);
+    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'APPROVED',
+    );
+    expect(await prisma.auditLog.findMany({ where: { storeId: stock.storeId } })).toEqual([]);
+  });
+
+  it('AC-04 (GR-01, NFR-01): a store employee of another store receiving this order is rejected, and no business data changes', async () => {
+    const { stock, sku, order, staff } = await approvedOrder();
+    // A direct API request by a different store's employee: store scope is server-side, so the
+    // order's own store code is never B02 here.
+    const staffOtherStore: User = {
+      ...staff,
+      id: `${staff.id}-b02`,
+      storeId: 'B02-NOT-THIS-STORE',
+    };
+
+    await expect(
+      call(controller.confirm(staffOtherStore), {
+        purchaseOrderNumber: order.number,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ sku, quantity: 8 }],
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    expect(await stock.balance()).toBe(10);
+    expect(await stock.movements()).toEqual([]);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(0);
+    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'APPROVED',
+    );
+    expect(await prisma.auditLog.findMany({ where: { storeId: stock.storeId } })).toEqual([]);
+  });
+
+  it('AC-03 (GR-05): two concurrent receipts of the full 20 cannot exceed the order — exactly one posts, total received is 20, stock rises to 30', async () => {
+    const { stock, sku, order, staff } = await approvedOrder();
+    const receiveAll = () =>
+      call(controller.confirm(staff), {
+        purchaseOrderNumber: order.number,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ sku, quantity: 20 }],
+      });
+
+    const results = await Promise.allSettled([receiveAll(), receiveAll()]);
+
+    // The two requests together ordered 40 against a cap of 20: one commits all 20, the other
+    // finds nothing outstanding and is rejected. The order quantity is never exceeded (GR-05).
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toMatchObject({
+      code: 'BAD_REQUEST',
+      message: expect.stringContaining(sku),
+    });
+
+    expect(await stock.balance()).toBe(30);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(1);
+    expect(await stock.movements()).toMatchObject([{ quantityChange: 20, type: 'RECEIPT' }]);
+    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'COMPLETED',
+    );
+  });
+
   it('NFR-03: the idempotency key is unique in the database, so a second use posts nothing', async () => {
     const { stock, sku, order, staff } = await approvedOrder();
     const input = {
