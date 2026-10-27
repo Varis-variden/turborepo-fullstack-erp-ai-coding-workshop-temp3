@@ -4,7 +4,14 @@
  * detail) never reaches the client (NFR-04).
  */
 
-type PrismaKnownError = { code: string; meta?: { target?: unknown } };
+type PrismaKnownError = {
+  code: string;
+  meta?: {
+    target?: unknown;
+    /** What the `pg` driver adapter reports instead of `target`. */
+    driverAdapterError?: { cause?: { constraint?: { fields?: unknown; index?: unknown } } };
+  };
+};
 
 function asPrismaKnownError(error: unknown): PrismaKnownError | undefined {
   return typeof error === 'object' && error !== null && 'code' in error
@@ -27,5 +34,12 @@ export function isUniqueConstraintError(error: unknown, field?: string): boolean
   if (field === undefined) return true;
 
   const target = known.meta?.target;
-  return Array.isArray(target) ? target.includes(field) : target === field;
+  if (target !== undefined)
+    return Array.isArray(target) ? target.includes(field) : target === field;
+
+  // Through the driver adapter the constraint is named by its fields or, for a unique index, by
+  // its name: `<Model>_<field>_key`.
+  const constraint = known.meta?.driverAdapterError?.cause?.constraint;
+  if (Array.isArray(constraint?.fields)) return constraint.fields.includes(field);
+  return typeof constraint?.index === 'string' && constraint.index.endsWith(`_${field}_key`);
 }

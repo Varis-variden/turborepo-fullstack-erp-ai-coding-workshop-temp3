@@ -153,9 +153,41 @@ async function main() {
     }
   }
 
+  // PO-DEMO-001 (TOR Section 8): Approved for B01, 20 packs of SKU001 at THB 45.00, nothing
+  // received yet. It is only created, never updated, so a re-seed cannot rewind receipts that
+  // were posted against it (the ledger is append-only, like the balances above).
+  const [b01, sup01, water] = await Promise.all([
+    prisma.store.findUniqueOrThrow({ where: { code: 'B01' } }),
+    prisma.supplier.findUniqueOrThrow({ where: { code: 'SUP01' } }),
+    prisma.product.findUniqueOrThrow({ where: { sku: 'SKU001' } }),
+  ]);
+  await prisma.purchaseOrder.upsert({
+    where: { number: 'PO-DEMO-001' },
+    update: {},
+    create: {
+      number: 'PO-DEMO-001',
+      status: 'APPROVED',
+      supplierId: sup01.id,
+      storeId: b01.id,
+      expectedReceiptDate: new Date('2026-02-01T00:00:00Z'),
+      lines: {
+        create: [
+          {
+            productId: water.id,
+            sku: water.sku,
+            productName: water.name,
+            unit: water.unit,
+            quantity: 20,
+            unitPrice: '45.00',
+          },
+        ],
+      },
+    },
+  });
+
   console.log(
     `Seeded ${demoStores.length} stores, ${demoSuppliers.length} suppliers, ` +
-      `${demoProducts.length} products with opening balances and ${demoUsers.length} demo users ` +
+      `${demoProducts.length} products with opening balances, PO-DEMO-001 and ${demoUsers.length} demo users ` +
       `(password: "${DEMO_PASSWORD}").`,
   );
 }
