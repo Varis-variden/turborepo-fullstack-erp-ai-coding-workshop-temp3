@@ -9,6 +9,9 @@ import { storageState } from './accounts.js';
 // receipt that has no edit or cancel route), so this walks the Demo line through the API the
 // browser uses. The order is this test's own — created by a buyer, approved by a manager, received
 // by staff_b01 — so it never collides with the seeded PO-DEMO-001 or another test's rows.
+//
+// The response shapes are read as narrow local types, as the other API-driven e2e tests do
+// (purchase-order-approval.e2e.ts): apps/e2e does not depend on @erp/contracts.
 type Order = { id: string; number: string; status: string };
 type Receipt = { id: string; number: string; orderStatus: string };
 type ReceivingLine = { sku: string; received: number; outstanding: number };

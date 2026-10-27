@@ -251,4 +251,25 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     expect(await stock.balance()).toBe(22);
     expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(2);
   });
+
+  it('GR-04: resending the receipt that completed the order replays it, not the over-receipt refusal', async () => {
+    const { stock, sku, order, staff } = await approvedOrder();
+    // One receipt that takes the order all the way to Completed.
+    const request = {
+      purchaseOrderNumber: order.number,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ sku, quantity: 20 }],
+    };
+
+    const completed = await call(controller.confirm(staff), request);
+    expect(completed.orderStatus).toBe('COMPLETED');
+
+    // Resending it would fail the over-receipt cap if it re-ran the confirmation (20 + 20 > 20).
+    // Instead the key is recognised and the original receipt is replayed, stock unchanged.
+    const replay = await call(controller.confirm(staff), request);
+    expect(replay).toEqual(completed);
+    expect(await stock.balance()).toBe(30);
+    expect(await prisma.goodsReceipt.count({ where: { purchaseOrderId: order.id } })).toBe(1);
+    expect(await stock.movements()).toHaveLength(1);
+  });
 });

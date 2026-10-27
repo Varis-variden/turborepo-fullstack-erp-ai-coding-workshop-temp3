@@ -76,6 +76,36 @@ function toReceivingOrder(row: OrderRow): ReceivingOrder {
   };
 }
 
+/** A confirmed receipt's lines as the GoodsReceipt output carries them, whether just created or
+ * read back for a replay: both sources snapshot `productName`, `unit` and `quantity` per SKU. */
+type ReceiptLineRow = { sku: string; productName: string; unit: string; quantity: number };
+
+/** The GoodsReceipt response, assembled the one way for both a fresh confirmation and a replay. */
+function toGoodsReceipt(receipt: {
+  id: string;
+  number: string;
+  purchaseOrderNumber: string;
+  orderStatus: GoodsReceipt['orderStatus'];
+  storeCode: string;
+  createdAt: Date;
+  lines: ReceiptLineRow[];
+}): GoodsReceipt {
+  return {
+    id: receipt.id,
+    number: receipt.number,
+    purchaseOrderNumber: receipt.purchaseOrderNumber,
+    orderStatus: receipt.orderStatus,
+    storeCode: receipt.storeCode,
+    createdAt: receipt.createdAt.toISOString(),
+    lines: receipt.lines.map((line) => ({
+      sku: line.sku,
+      name: line.productName,
+      unit: line.unit,
+      quantity: line.quantity,
+    })),
+  };
+}
+
 @Controller()
 export class GoodsReceiptsController {
   constructor(
@@ -112,14 +142,23 @@ export class GoodsReceiptsController {
   @Implement(contract.goodsReceipts.confirm)
   confirm(@CurrentUser() user: User) {
     return implement(contract.goodsReceipts.confirm).handler(async ({ input }) => {
+      // A retry of an action that already posted returns the original receipt, whatever the order
+      // has become since (it may be fully received now): the key is looked up before the status
+      // and over-receipt checks a fresh confirmation runs, so a replay is never refused by them
+      // and never double-counts stock (GR-04).
+      const replay = await this.replayReceipt(user, input.idempotencyKey);
+      if (replay) return replay;
+
       try {
         return await this.confirmReceipt(user, input);
       } catch (error) {
-        // The key is unique-constrained (NFR-03): a retry of the same action cannot post twice.
-        // Instead of failing, replay the receipt the first confirmation already wrote, so a flaky
-        // network or a double click returns the original and never double-counts stock (GR-04).
+        // The key is unique-constrained (NFR-03): two identical requests racing each other both
+        // pass the lookup above, then one commits and the other's insert hits the constraint.
+        // The loser replays the receipt the winner just wrote rather than failing (GR-04).
         if (isUniqueConstraintError(error, 'idempotencyKey')) {
-          return this.replayReceipt(user, input.idempotencyKey);
+          const raced = await this.replayReceipt(user, input.idempotencyKey);
+          if (raced) return raced;
+          throw new ORPCError('CONFLICT', { message: DUPLICATE_RECEIPT_MESSAGE });
         }
         throw error;
       }
@@ -127,13 +166,14 @@ export class GoodsReceiptsController {
   }
 
   /**
-   * Read back the receipt a previous confirmation wrote under this idempotency key and return it
-   * in the GoodsReceipt shape (GR-04). Store scope is enforced here too, so a replay can never
-   * hand one store's receipt to another (NFR-01). If the key clashed but no receipt can be read
-   * back, the clash was something other than a replay: surface it as a conflict without leaking
-   * database detail (NFR-04).
+   * The receipt a previous confirmation wrote under this idempotency key, in the GoodsReceipt
+   * shape, or `undefined` if the key has not been used (GR-04). Store scope is enforced here too,
+   * so a replay can never hand one store's receipt to another (NFR-01).
    */
-  private async replayReceipt(user: User, idempotencyKey: string): Promise<GoodsReceipt> {
+  private async replayReceipt(
+    user: User,
+    idempotencyKey: string,
+  ): Promise<GoodsReceipt | undefined> {
     const receipt = await this.prisma.goodsReceipt.findUnique({
       where: { idempotencyKey },
       include: {
@@ -145,24 +185,17 @@ export class GoodsReceiptsController {
         },
       },
     });
-    if (!receipt) {
-      throw new ORPCError('CONFLICT', { message: DUPLICATE_RECEIPT_MESSAGE });
-    }
+    if (!receipt) return undefined;
     assertStoreScope(user, receipt.store.code);
-    return {
+    return toGoodsReceipt({
       id: receipt.id,
       number: receipt.number,
       purchaseOrderNumber: receipt.purchaseOrder.number,
       orderStatus: receipt.purchaseOrder.status,
       storeCode: receipt.store.code,
-      createdAt: receipt.createdAt.toISOString(),
-      lines: receipt.lines.map((line) => ({
-        sku: line.sku,
-        name: line.productName,
-        unit: line.unit,
-        quantity: line.quantity,
-      })),
-    };
+      createdAt: receipt.createdAt,
+      lines: receipt.lines,
+    });
   }
 
   /**
@@ -267,20 +300,15 @@ export class GoodsReceiptsController {
         },
       });
 
-      return {
+      return toGoodsReceipt({
         id: receipt.id,
         number: receipt.number,
         purchaseOrderNumber: order.number,
         orderStatus,
         storeCode: order.store.code,
-        createdAt: receipt.createdAt.toISOString(),
-        lines: receipt.lines.map((line) => ({
-          sku: line.sku,
-          name: line.productName,
-          unit: line.unit,
-          quantity: line.quantity,
-        })),
-      };
+        createdAt: receipt.createdAt,
+        lines: receipt.lines,
+      });
     });
   }
 }

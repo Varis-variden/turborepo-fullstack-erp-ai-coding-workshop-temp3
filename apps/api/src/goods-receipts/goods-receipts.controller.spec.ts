@@ -78,11 +78,14 @@ function createTx(order: ReturnType<typeof orderRow> | null) {
   return { tx, goodsReceiptCreate };
 }
 
-async function createController(stock: StockService, prisma: object = {}) {
+async function createController(stock: StockService, prisma?: object) {
+  // By default no receipt exists for the key, so confirm() falls through to a fresh confirmation.
+  // A replay test passes its own prisma whose goodsReceipt.findUnique returns the stored receipt.
+  const prismaStub = prisma ?? { goodsReceipt: { findUnique: vi.fn().mockResolvedValue(null) } };
   const moduleRef = await Test.createTestingModule({
     controllers: [GoodsReceiptsController],
     providers: [
-      { provide: PrismaService, useValue: prisma },
+      { provide: PrismaService, useValue: prismaStub },
       { provide: StockService, useValue: stock },
     ],
   }).compile();
@@ -282,6 +285,34 @@ describe('GoodsReceiptsController.confirm', () => {
       idempotencyKey: KEY,
       lines: [{ sku: 'SKU001', quantity: 8 }],
     };
+
+    it('replays even when the order is now Completed, instead of re-running the over-receipt cap', async () => {
+      // The receipt that completed the order: a retry of it must return the original, not be
+      // rejected by the status or over-receipt checks that a fresh confirmation would run.
+      const completing = {
+        ...storedReceipt(),
+        purchaseOrder: { number: 'PO-DEMO-001', status: 'COMPLETED' as const },
+        lines: [
+          { sku: 'SKU001', productName: 'Drinking water pack of 6', unit: 'pack', quantity: 20 },
+        ],
+      };
+      const findUnique = vi.fn().mockResolvedValue(completing);
+      // The order is fully received, so a fresh confirmation would be refused; the stub proves the
+      // replay path never reaches the transaction.
+      const { tx } = createTx(orderRow({ status: 'COMPLETED' }));
+      const { stock, apply, transact } = createStock(tx);
+      const controller = await createController(stock, { goodsReceipt: { findUnique } });
+
+      const receipt = await call(controller.confirm(staffB01), {
+        purchaseOrderNumber: 'PO-DEMO-001',
+        idempotencyKey: KEY,
+        lines: [{ sku: 'SKU001', quantity: 20 }],
+      });
+
+      expect(receipt).toMatchObject({ number: 'GR-001', orderStatus: 'COMPLETED' });
+      expect(transact).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+    });
 
     it('returns the original receipt instead of double-counting stock, and leaks no database detail', async () => {
       const { tx, findUnique, prisma } = createReplay(storedReceipt());
