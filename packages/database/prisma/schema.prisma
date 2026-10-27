@@ -21,6 +21,15 @@ enum Role {
   MANAGER
 }
 
+/// Why a stock balance changed. The ledger records one movement per change.
+/// RECEIPT: goods received against a purchase order. SALE: stock sold at a store.
+/// ADJUSTMENT: a manual correction (and the opening balances the seed lays down).
+enum StockMovementType {
+  RECEIPT
+  SALE
+  ADJUSTMENT
+}
+
 /// A store is a distinct stock location. `code` is the business key used across the app
 /// (e.g. "B01"); it is what `User.storeId` refers to.
 model Store {
@@ -31,6 +40,8 @@ model Store {
   createdAt DateTime @default(now())
 
   reorderThresholds ProductReorderThreshold[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
 }
 
 /// A product is something the retailer buys and sells, with one base unit. `sku` is the business
@@ -50,6 +61,8 @@ model Product {
   createdAt    DateTime @default(now())
 
   reorderThresholds ProductReorderThreshold[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
 }
 
 /// The reorder threshold of one product in one store. Whole number, never negative (checked by
@@ -88,4 +101,48 @@ model User {
   storeId      String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// The append-only stock-movement ledger: the source of truth for every balance change (INV-02).
+/// One row per increase or decrease, recording the before/after balance, the movement type, the
+/// source document it came from, who did it, and when. Rows are never edited or deleted; a
+/// confirmed movement is immutable. The derived StockBalance is written in the same transaction.
+model StockMovement {
+  id             String            @id @default(cuid())
+  productId      String
+  storeId        String
+  /// Signed change: positive for a receipt, negative for a sale. Whole units.
+  quantityChange Int
+  /// The store balance for this product immediately before and after this movement.
+  balanceBefore  Int
+  balanceAfter   Int
+  type           StockMovementType
+  /// The document that caused the movement, e.g. "GR" / "SAL" / "ADJUSTMENT", plus its id.
+  /// Nullable for the opening balances the seed lays down, which have no source document.
+  sourceType     String?
+  sourceId       String?
+  /// The user who performed the action. Nullable for seed/opening movements.
+  actorId        String?
+  createdAt      DateTime          @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@index([productId, storeId, createdAt])
+}
+
+/// The derived current quantity of one product in one store: a fast-read cache over the ledger.
+/// Balance = opening + successful movements, never negative (INV-03). Written in the same
+/// transaction as the movement that changes it, so it can never drift from the ledger.
+model StockBalance {
+  productId String
+  storeId   String
+  /// Current on-hand quantity. Whole units, never negative.
+  quantity  Int    @default(0)
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@id([productId, storeId])
 }
