@@ -42,6 +42,7 @@ function orderRow(number: string, overrides: Record<string, unknown> = {}) {
     id: 'po1',
     number,
     status: 'DRAFT',
+    reason: null,
     expectedReceiptDate: new Date('2026-02-01T00:00:00Z'),
     createdAt: new Date('2026-01-01T00:00:00Z'),
     supplier,
@@ -110,6 +111,7 @@ describe('PurchaseOrdersController.create', () => {
       storeName: 'Central Store',
       expectedReceiptDate: '2026-02-01',
       createdAt: '2026-01-01T00:00:00.000Z',
+      reason: null,
       lines: [
         {
           id: 'l1',

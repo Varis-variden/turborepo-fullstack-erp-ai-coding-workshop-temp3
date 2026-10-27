@@ -158,8 +158,16 @@ model StockBalance {
   @@id([productId, storeId])
 }
 
+/// The purchase-order lifecycle (PO-02..PO-04). The API enforces which transitions are legal;
+/// REJECTED, CANCELLED and COMPLETED are terminal.
 enum PurchaseOrderStatus {
   DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+  PARTIALLY_RECEIVED
+  COMPLETED
 }
 
 /// The next number to hand out for each type of numbered document (`PO`, later `GR` and `SAL`).
@@ -185,6 +193,8 @@ model PurchaseOrder {
   expectedReceiptDate DateTime            @db.Date
   /// The user who created it. Not a foreign key, like StockMovement.actorId.
   createdById         String?
+  /// Why the order was rejected or cancelled; null otherwise.
+  reason              String?
   createdAt           DateTime            @default(now())
 
   supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
