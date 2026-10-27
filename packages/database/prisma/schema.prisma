@@ -160,11 +160,14 @@ model StockBalance {
   @@id([productId, storeId])
 }
 
-/// Where a purchase order is in its life. Receipts move an APPROVED order to PARTIALLY_RECEIVED
-/// while quantity is outstanding and to COMPLETED once every line is fully received (GR-03).
+/// The purchase-order lifecycle (PO-02..PO-04). The API enforces which transitions are legal;
+/// REJECTED, CANCELLED and COMPLETED are terminal.
 enum PurchaseOrderStatus {
   DRAFT
+  PENDING_APPROVAL
   APPROVED
+  REJECTED
+  CANCELLED
   PARTIALLY_RECEIVED
   COMPLETED
 }
@@ -192,6 +195,8 @@ model PurchaseOrder {
   expectedReceiptDate DateTime            @db.Date
   /// The user who created it. Not a foreign key, like StockMovement.actorId.
   createdById         String?
+  /// Why the order was rejected or cancelled; null otherwise.
+  reason              String?
   createdAt           DateTime            @default(now())
 
   supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)

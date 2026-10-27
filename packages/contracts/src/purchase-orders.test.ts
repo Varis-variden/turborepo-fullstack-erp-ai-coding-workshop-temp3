@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ApprovePurchaseOrderInputSchema,
+  CancelPurchaseOrderInputSchema,
   CreatePurchaseOrderInputSchema,
   ListPurchaseOrdersInputSchema,
   PurchaseOrderSchema,
+  PurchaseOrderStatusSchema,
+  RejectPurchaseOrderInputSchema,
+  SubmitPurchaseOrderInputSchema,
 } from './purchase-orders.js';
 
 const validInput = {
@@ -135,6 +140,7 @@ describe('PurchaseOrderSchema', () => {
     storeName: 'Central Store',
     expectedReceiptDate: '2026-02-01',
     createdAt: '2026-01-01T00:00:00.000Z',
+    reason: null,
     lines: [
       {
         id: 'l1',
@@ -153,6 +159,68 @@ describe('PurchaseOrderSchema', () => {
 
   it('rejects an unknown status', () => {
     expect(PurchaseOrderSchema.safeParse({ ...order, status: 'SHIPPED' }).success).toBe(false);
+  });
+
+  it.each([
+    'DRAFT',
+    'PENDING_APPROVAL',
+    'APPROVED',
+    'REJECTED',
+    'CANCELLED',
+    'PARTIALLY_RECEIVED',
+    'COMPLETED',
+  ])('knows the %s status from the transition table', (status) => {
+    expect(PurchaseOrderStatusSchema.safeParse(status).success).toBe(true);
+  });
+
+  it('carries the reason given when an order was rejected or cancelled', () => {
+    const result = PurchaseOrderSchema.safeParse({
+      ...order,
+      status: 'REJECTED',
+      reason: 'Price too high',
+    });
+    expect(result.success && result.data.reason).toBe('Price too high');
+  });
+});
+
+describe.each([
+  ['submit', SubmitPurchaseOrderInputSchema],
+  ['approve', ApprovePurchaseOrderInputSchema],
+])('%s input', (_name, schema) => {
+  it('needs only the order id', () => {
+    expect(schema.safeParse({ id: 'po1' }).success).toBe(true);
+    expect(schema.safeParse({ id: '' }).success).toBe(false);
+    expect(schema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe.each([
+  ['reject', RejectPurchaseOrderInputSchema, 'กรุณาระบุเหตุผลในการปฏิเสธใบสั่งซื้อ'],
+  ['cancel', CancelPurchaseOrderInputSchema, 'กรุณาระบุเหตุผลในการยกเลิกใบสั่งซื้อ'],
+])('%s input', (_name, schema, requiredMessage) => {
+  it('accepts an order id with a reason and trims the reason', () => {
+    const result = schema.safeParse({ id: 'po1', reason: '  Price too high  ' });
+    expect(result.success && result.data).toEqual({ id: 'po1', reason: 'Price too high' });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['blank', '   '],
+  ])('requires a reason: a %s reason is rejected with an actionable message', (_label, reason) => {
+    const result = schema.safeParse({ id: 'po1', reason });
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues.map((i) => i.message)).toContain(requiredMessage);
+  });
+
+  it('limits the reason to 200 characters', () => {
+    expect(schema.safeParse({ id: 'po1', reason: 'x'.repeat(200) }).success).toBe(true);
+    expect(schema.safeParse({ id: 'po1', reason: 'x'.repeat(201) }).success).toBe(false);
+  });
+
+  it('needs the order id', () => {
+    expect(schema.safeParse({ id: '', reason: 'why' }).success).toBe(false);
   });
 });
 
