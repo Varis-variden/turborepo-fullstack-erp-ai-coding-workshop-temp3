@@ -7,15 +7,9 @@
 type PrismaKnownError = {
   code: string;
   meta?: {
-    /** The classic shape: the field(s) named in the constraint. */
     target?: unknown;
-    /**
-     * Prisma 7 talks to Postgres through a driver adapter, which reports a unique-constraint
-     * violation by the constraint's index name (e.g. `Product_sku_key`) rather than its fields.
-     */
-    driverAdapterError?: {
-      cause?: { constraint?: { index?: unknown; fields?: unknown } };
-    };
+    /** What the `pg` driver adapter reports instead of `target`. */
+    driverAdapterError?: { cause?: { constraint?: { fields?: unknown; index?: unknown } } };
   };
 };
 
@@ -32,11 +26,7 @@ export function isRecordNotFoundError(error: unknown): boolean {
 
 /**
  * True when `error` is a unique-constraint violation (Prisma `P2002`). When `field` is given, it
- * must be one of the fields named in the constraint.
- *
- * Two error shapes are accepted. The classic one names the field(s) in `meta.target`. The driver
- * adapter (Prisma 7 + `@prisma/adapter-pg`) instead names the constraint's index, e.g.
- * `Product_sku_key`, from which the field is read by the `<Table>_<field>_key` convention.
+ * must be one of the fields named in the constraint target.
  */
 export function isUniqueConstraintError(error: unknown, field?: string): boolean {
   const known = asPrismaKnownError(error);
@@ -44,18 +34,12 @@ export function isUniqueConstraintError(error: unknown, field?: string): boolean
   if (field === undefined) return true;
 
   const target = known.meta?.target;
-  if (Array.isArray(target) ? target.includes(field) : target === field) return true;
+  if (target !== undefined)
+    return Array.isArray(target) ? target.includes(field) : target === field;
 
-  // Driver-adapter shape: match the field against the constraint it names.
+  // Through the driver adapter the constraint is named by its fields or, for a unique index, by
+  // its name: `<Model>_<field>_key`.
   const constraint = known.meta?.driverAdapterError?.cause?.constraint;
-  const fields = constraint?.fields;
-  if (Array.isArray(fields) ? fields.includes(field) : fields === field) return true;
-
-  const index = constraint?.index;
-  return typeof index === 'string' && indexNamesField(index, field);
-}
-
-/** Postgres names a unique index `<Table>_<field>_key`; true when `index` is the one for `field`. */
-function indexNamesField(index: string, field: string): boolean {
-  return index.endsWith(`_${field}_key`);
+  if (Array.isArray(constraint?.fields)) return constraint.fields.includes(field);
+  return typeof constraint?.index === 'string' && constraint.index.endsWith(`_${field}_key`);
 }

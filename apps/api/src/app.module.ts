@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { sanitizeError } from './common/sanitize-error.js';
 import { validateEnv } from './config/env.js';
 import { DatabaseModule } from './database/database.module.js';
+import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
 import { HealthModule } from './health/health.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
@@ -38,6 +39,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     DatabaseModule,
     AuthModule,
     AuditModule,
+    GoodsReceiptsModule,
     HealthModule,
     InventoryModule,
     OpenApiModule,
