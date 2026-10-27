@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract';
 import * as z from 'zod';
+import { MONEY_FORMAT } from './money.js';
 import { paginated, PaginationInputSchema } from './pagination.js';
 
 /** A reorder threshold for one store, keyed by the store's business code (e.g. "B01"). */
@@ -26,9 +27,6 @@ export const ProductSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export type Product = z.infer<typeof ProductSchema>;
-
-/** Money has at most 10 whole digits and 2 decimals, matching the database's Decimal(12,2). */
-const MONEY_FORMAT = /^-?\d{1,10}(\.\d{1,2})?$/;
 
 /**
  * Selling price as entered: a non-negative amount with at most two decimals (MD-02). The parsed
